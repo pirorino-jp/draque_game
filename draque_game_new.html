@@ -1,0 +1,2747 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ドラゴンクエスト風RPG</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'MS Gothic', monospace; background: #000; display: flex; justify-content: center; align-items: center; min-height: 100vh; color: #fff; }
+        #game-container { width: 800px; background: #000; border: 4px solid #fff; }
+        #game-screen { width: 100%; height: 480px; background: #000; position: relative; overflow: hidden; }
+        #field-container { position: absolute; top: 0; left: 0; transition: transform 0.1s; }
+        #field { display: grid; grid-template-columns: repeat(100, 30px); grid-template-rows: repeat(100, 30px); }
+        .tile { width: 30px; height: 30px; }
+        .grass { background: #0a0; }
+        .forest { background: #050; }
+        .water { background: #05f; }
+        .mountain { background: #864; }
+        .desert { background: #ed9; }
+        .snow { background: #eef; }
+        .swamp { background: #583; }
+        .bridge { background: #963; }
+        .cave { background: #333; }
+        .town { background: #fa0; }
+        .shop { background: #f0a; }
+        #player { position: absolute; width: 30px; height: 30px; background: #ff0; border-radius: 50%; transition: all 0.1s; box-shadow: 0 0 10px rgba(255,255,0,0.5); }
+        #message-box { height: 150px; background: #000; border-top: 4px solid #fff; padding: 10px; font-size: 16px; line-height: 1.3; overflow-y: auto; max-height: 200px; white-space: pre-wrap; word-wrap: break-word; }
+        #status { display: flex; justify-content: space-between; padding: 10px 15px; background: #000; border-top: 2px solid #fff; font-size: 16px; }
+        .status-group { display: flex; gap: 20px; }
+        .battle-screen { width: 100%; height: 100%; background: #000; display: none; flex-direction: column; justify-content: space-around; align-items: center; padding: 30px; }
+        /* battle-screenを強制皁E��非表示にする */
+        #battle-screen.force-hide { display: none !important; }
+        .enemy-group { display: flex; flex-wrap: wrap; justify-content: center; gap: 20px; margin: 20px 0; }
+        .enemy-container { display: flex; flex-direction: column; align-items: center; cursor: pointer; padding: 10px; border: 2px solid transparent; border-radius: 5px; }
+        .enemy-container.selected { border-color: #ff0; background: rgba(255, 255, 0, 0.2); }
+        .enemy-container.dead { opacity: 0.3; cursor: default; }
+        .enemy-sprite { font-size: 60px; }
+        .enemy-number { font-size: 14px; color: #aaa; }
+        .battle-info { text-align: center; font-size: 20px; min-height: 60px; }
+        .battle-commands { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; width: 400px; }
+        button { padding: 8px; font-size: 18px; font-family: 'MS Gothic', monospace; background: #000; color: #fff; border: 3px solid #fff; cursor: pointer; transition: all 0.05s; }
+        button:hover:not(:disabled) { background: #333; }
+        button:active:not(:disabled) { transform: scale(0.95); background: #fff; color: #000; box-shadow: inset 0 0 10px rgba(255,255,255,0.5); }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        .msg-ally { color: #fff; }
+        .msg-enemy { color: #f90; }
+        @keyframes fadeOut {
+            0% { opacity: 1; }
+            100% { opacity: 0; }
+        }
+        .battle-screen.fade-out { animation: fadeOut 2s ease-in-out forwards; }
+        @keyframes screen-shake {
+            0%, 100% { transform: translate(0, 0); }
+            10% { transform: translate(-5px, -5px); }
+            20% { transform: translate(5px, 5px); }
+            30% { transform: translate(-5px, 5px); }
+            40% { transform: translate(5px, -5px); }
+            50% { transform: translate(-5px, 0); }
+            60% { transform: translate(5px, 0); }
+            70% { transform: translate(0, -5px); }
+            80% { transform: translate(0, 5px); }
+            90% { transform: translate(-2px, -2px); }
+        }
+        #game-screen.shake { animation: screen-shake 0.4s ease-in-out; }
+        @keyframes enemy-shake {
+            0%, 100% { transform: translateX(0); }
+            10% { transform: translateX(-8px); }
+            20% { transform: translateX(8px); }
+            30% { transform: translateX(-8px); }
+            40% { transform: translateX(8px); }
+            50% { transform: translateX(-8px); }
+            60% { transform: translateX(8px); }
+            70% { transform: translateX(-4px); }
+            80% { transform: translateX(4px); }
+            90% { transform: translateX(-2px); }
+        }
+        .enemy-container.taking-damage { animation: enemy-shake 0.4s ease-in-out; }
+        .menu { display: none; position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); background: #000; border: 4px solid #fff; padding: 30px; min-width: 500px; max-height: 80%; overflow-y: auto; z-index: 1000; }
+        .menu h2, .menu h3 { margin-bottom: 20px; text-align: center; }
+        #item-target-menu { display: none; }
+        .target-button { display: block; width: 100%; padding: 15px; margin-bottom: 10px; background: #000; color: #fff; border: 3px solid #fff; font-size: 16px; font-family: 'MS Gothic', monospace; cursor: pointer; text-align: left; }
+        .target-button:hover { background: #333; }
+        .target-button.player { border-color: #ff0; }
+        .target-button.companion { border-color: #0f0; }
+        .shop-item, .magic-item, .equipment-item { display: flex; justify-content: space-between; padding: 10px; border: 2px solid #fff; margin-bottom: 10px; cursor: pointer; }
+        .shop-item:hover, .magic-item:hover { background: #333; }
+        .equipment-item { cursor: default; }
+        .equipment-stat { color: #0f0; }
+        .magic-item.disabled { opacity: 0.5; cursor: not-allowed; }
+        .status-effect { color: #f0f; font-size: 14px; margin-top: 5px; }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <div id="game-screen">
+            <div id="field-container">
+                <div id="field"></div>
+            </div>
+            <div id="player"></div>
+            <div class="menu" id="shop-menu">
+                <h2 id="shop-title">みせ</h2>
+                <div id="shop-items"></div>
+                <button onclick="game.closeShop()">店を出る</button>
+            </div>
+            <div class="menu" id="inn-menu">
+                <h2>宿屋</h2>
+                <p style="margin-bottom: 20px;">一晩 50ゴールドです、</p>
+                <button onclick="game.stayAtInn()">とまる</button>
+                <button onclick="game.closeInn()">宿屋を出る</button>
+            </div>
+            <div class="menu" id="equipment-menu">
+                <h2>そうび</h2>
+                <div id="equipment-list"></div>
+                <button onclick="game.closeEquipmentMenu()">もどる</button>
+            </div>
+            <div class="menu" id="equipment-target-menu" style="display:none;">
+                <h2>だれに わたす</h2>
+                <div id="equipment-target-list"></div>
+                <button onclick="game.closeEquipmentTargetMenu()">もどる</button>
+            </div>
+            <div class="menu" id="field-item-menu">
+                <h2>どうぐ</h2>
+                <div id="field-item-list"></div>
+                <button onclick="game.closeFieldItemMenu()">もどる</button>
+            </div>
+            <div class="menu" id="field-item-target-menu" style="display:none;">
+                <h2>だれに つかう</h2>
+                <div id="field-item-target-list"></div>
+                <button onclick="game.closeFieldItemTargetMenu()">もどる</button>
+            </div>
+            <div class="battle-screen" id="battle-screen">
+                <div class="enemy-group" id="enemy-group"></div>
+                <div class="battle-info" id="battle-info"></div>
+                <div class="menu" id="magic-menu">
+                    <h3>まほう</h3>
+                    <div id="magic-list"></div>
+                    <button onclick="game.closeMagicMenu()">もどる</button>
+                </div>
+                <div class="menu" id="item-menu">
+                    <h3>どうぐ</h3>
+                    <div id="item-list"></div>
+                    <button onclick="game.closeItemMenu()">もどる</button>
+                </div>
+                <div class="menu" id="item-target-menu">
+                    <div id="target-menu-content"></div>
+                    <button onclick="game.closeItemTargetMenu()">もどる</button>
+                </div>
+                <div class="battle-commands" id="battle-commands">
+                    <button onclick="game.attack()">たたかう</button>
+                    <button onclick="game.openMagicMenu()">まほう</button>
+                    <button onclick="game.openItemMenu()">どうぐ</button>
+                    <button onclick="game.runAway()">にげる</button>
+                </div>
+            </div>
+        </div>
+        <div id="message-box">ようこそ、勇者の世界へ！<br>世界を冒険しよう！</div>
+        <div id="status">
+            <div class="status-group">
+                <span>職: <span id="job">勇者</span></span>
+                <span>LV: <span id="level">1</span></span>
+                <span>HP: <span id="hp">30</span>/<span id="maxHp">30</span></span>
+                <span>MP: <span id="mp">10</span>/<span id="maxMp">10</span></span>
+            </div>
+            <div class="status-group">
+                <span>EXP: <span id="exp">0</span></span>
+                <span>G: <span id="gold">100</span></span>
+                <button onclick="game.openEquipmentMenu()" style="padding: 5px 10px; font-size: 14px; margin-left: 20px;">そうび</button>
+                <button onclick="game.openFieldItemMenu()" style="padding: 5px 10px; font-size: 14px;">どうぐ</button>
+                <button id="music-toggle-btn" onclick="game.toggleMusic()" style="padding: 5px 10px; font-size: 14px;">音楽停止</button>
+            </div>
+        </div>
+        <div id="field-party-status" style="display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin:10px 0;font-size:14px;"></div>
+    </div>
+
+    <audio id="field-music" loop style="display: none;">
+        <source src="ファンタジー-異変-.mp3" type="audio/mpeg">
+    </audio>
+    <audio id="battle-music-1" loop style="display: none;">
+        <source src="RPG_Battle_03.mp3" type="audio/mpeg">
+    </audio>
+    <audio id="battle-music-2" loop style="display: none;">
+        <source src="RPG_Battle_01.mp3" type="audio/mpeg">
+    </audio>
+    <audio id="battle-music-3" loop style="display: none;">
+        <source src="battle.mp3" type="audio/mpeg">
+    </audio>
+    <audio id="shop-music" loop style="display: none;">
+        <source src="ファンタジー7-街-.mp3" type="audio/mpeg">
+    </audio>
+    <audio id="enemy-attack-se" style="display: none;">
+        <source src="小パンチ.mp3" type="audio/mpeg">
+    </audio>
+    <audio id="player-attack-se" style="display: none;">
+        <source src="打撃2.mp3" type="audio/mpeg">
+    </audio>
+    <audio id="levelup-se" style="display: none;">
+        <source src="レベルアップ.mp3" type="audio/mpeg">
+    </audio>
+
+    <script>
+        const game = {
+            player: {
+                name: '勇者',
+                job: '勇者',
+                x: 50, y: 50, hp: 30, maxHp: 30, mp: 10, maxMp: 10, level: 1, exp: 0, gold: 100,
+                attack: 5, defense: 3, poisoned: false,
+                speed: 10,
+                pendingShopItem: null,
+                aptitude: null,
+                formation: 'front',
+                equipment: {
+                    weapon: null,
+                    armor: null,
+                    helmet: null,
+                    gloves: null,
+                    boots: null
+                },
+                inventory: {'やくそう': 3, 'どくけしそう': 1}
+            },
+            companions: [], // 仲間一覧            
+            companionNames: ['戦士', '魔法使い', '僧侶', '踊り子', '盗賊', '狩人', '騎士', '武具職人', '商人', '吟遊詩人'],
+            companionHumanNamesMale: ['Bob','Daniel','Ethan','George','Jack','Liam','Noah','Paul','Ryan','Thomas','Victor','Xavier','Zach','Aaron','Brandon','Charles','David','Edward','Frank','Henry','Ian','Jason','Kevin','Luke','Mason','Nathan','Owen','Peter','Quentin','Robert','Sean','Travis','Ulric','Vince','Walter','Yuri','Zane'],
+            companionHumanNamesFemale: ['Alice','Catherine','Fiona','Hannah','Isabella','Kelly','Mia','Olivia','Quinn','Sophia','Uma','Wendy','Yvonne','Amber','Bella','Chloe','Diana','Emma','Grace','Hailey','Ivy','Jasmine','Kara','Luna','Maya','Nina','Ophelia','Piper','Renee','Sierra','Tina','Valerie','Willow','Xenia','Zoe','Serena'],
+            companionHumanNamesNeutral: ['Alex','Taylor','Jordan','Skyler','Riley','Casey','Morgan','Jamie','Cameron','Rowan'],
+            equipmentViewIndex: 0,
+            gameOverFlag: false,
+            inBattle: false,
+            currentEnemies: [],
+            selectedEnemyIndex: 0,
+            commandsLocked: false,
+            currentShop: null,
+            damageHistory: {}, // ダメージ履歴を記録: {playerName: totalDamage}
+            mapSize: 100,
+            viewportWidth: 16,
+            viewportHeight: 16,
+            map: [],
+            audioContext: null,
+            currentMusic: null,
+            musicEnabled: true,
+            inShop: false,
+            battleMusicIndex: 0,
+            selectedFieldMusic: null,
+
+            enemies: [
+                // 初級モンスター（草原、森林）                
+                {name:'スライム',hp:8,attack:3,defense:1,exp:5,gold:10,sprite:'💧',poison:false,terrain:['grass','forest'],drops:[{item:'やくそう',chance:0.3}]},
+                {name:'こうもり',hp:7,attack:4,defense:1,exp:6,gold:8,sprite:'🦁',poison:false,terrain:['cave','forest'],drops:[{item:'やくそう',chance:0.2}]},
+                {name:'とうぞく',hp:16,attack:7,defense:4,exp:14,gold:20,sprite:'🥷',poison:false,terrain:['desert','swamp'],drops:[{item:'gold',amount:50,chance:0.2}]},
+                {name:'おおねずみ',hp:9,attack:3,defense:2,exp:5,gold:12,sprite:'🐭',poison:false,terrain:['forest','cave'],drops:[{item:'どくけしそう',chance:0.2}]},
+                {name:'コボルド',hp:10,attack:4,defense:2,exp:7,gold:15,sprite:'👹',poison:false,terrain:['forest','cave'],drops:[{item:'ひのきのぼう',chance:0.1,type:'weapon',attack:2}]},
+                {name:'がいこつ',hp:12,attack:5,defense:3,exp:8,gold:18,sprite:'💀',poison:false,terrain:['cave','swamp'],drops:[{item:'かわのぼうし',chance:0.15,type:'helmet',defense:1}]},
+                {name:'サンドパピー',hp:14,attack:8,defense:2,exp:11,gold:22,sprite:'🐶',poison:false,terrain:['desert','grass'],drops:[{item:'やくそう',chance:0.15}]},
+                {name:'ストーンフィッシュ',hp:20,attack:5,defense:5,exp:16,gold:28,sprite:'🐟',poison:false,terrain:['water','swamp'],drops:[{item:'やくそう',chance:0.15}]},
+                {name:'グリーンキャタピラー',hp:15,attack:4,defense:2,exp:10,gold:18,sprite:'🐛',poison:true,terrain:['forest','grass'],drops:[{item:'どくけしそう',chance:0.25}]},
+                {name:'ダストウルフ',hp:22,attack:8,defense:3,exp:8,gold:20,sprite:'🐺',poison:false,terrain:['desert','grass'],drops:[{item:'やくそう',chance:0.2}]},
+                {name:'パフビー',hp:17,attack:4,defense:2,exp:2,gold:20,sprite:'🪰',poison:false,terrain:['grass','flower'],drops:[{item:'やくそう',chance:0.15}]},
+                {name:'トードメイジ',hp:24,attack:12,defense:3,exp:10,gold:42,sprite:'🐸',poison:false,terrain:['swamp','forest'],drops:[{item:'やくそう',chance:0.25}]},
+                {name:'ストーンラビット',hp:18,attack:6,defense:8,exp:15,gold:28,sprite:'🐇',poison:false,terrain:['mountain','grass'],drops:[{item:'やくそう',chance:0.15}]},
+                {name:'インプソルジャー',hp:20,attack:7,defense:3,exp:18,gold:36,sprite:'',poison:false,terrain:['cave','swamp'],drops:[{item:'どくけしそう',chance:0.2}]},
+                {name:'グレイゴブリン',hp:22,attack:8,defense:4,exp:19,gold:38,sprite:'👺',poison:false,terrain:['cave','forest'],drops:[{item:'やくそう',chance:0.2}]},
+                
+                // 中級モンスター�E�Eesert, swamp, cave�E�E                
+                {name:'ゴブリン',hp:15,attack:6,defense:2,exp:12,gold:25,sprite:'👺',poison:false,terrain:['forest','cave'],drops:[{item:'どうのつるぎ',chance:0.1,type:'weapon',attack:5}]},
+                {name:'ゴースト',hp:13,attack:7,defense:3,exp:13,gold:28,sprite:'👻',poison:false,terrain:['cave','swamp'],drops:[{item:'やくそう',chance:0.25}]},
+                {name:'タイガー',hp:18,attack:8,defense:2,exp:15,gold:30,sprite:'🐯',poison:false,terrain:['forest','desert'],drops:[{item:'ちからのたね',chance:0.15}]},
+                {name:'がいこつ戦士',hp:20,attack:9,defense:5,exp:16,gold:32,sprite:'⚔︁',poison:false,terrain:['cave','swamp'],drops:[{item:'てつのかぶと',chance:0.12,type:'helmet',defense:3}]},
+                {name:'ゾンビ',hp:22,attack:8,defense:3,exp:15,gold:28,sprite:'🧁',poison:true,terrain:['swamp','cave'],drops:[{item:'どくけしそう',chance:0.3}]},
+                {name:'おおさそり',hp:20,attack:9,defense:4,exp:17,gold:35,sprite:'🦁',poison:true,terrain:['desert','swamp'],drops:[{item:'どくけしそう',chance:0.4}]},
+                {name:'ワイルドべアー',hp:25,attack:11,defense:3,exp:18,gold:40,sprite:'🐻',poison:false,terrain:['forest','snow'],drops:[{item:'ちからのたね',chance:0.2}]},
+                {name:'キラービー',hp:14,attack:8,defense:2,exp:14,gold:28,sprite:'🐝',poison:false,terrain:['forest','flower'],drops:[{item:'やくそう',chance:0.3}]},
+                {name:'おおこうもり',hp:17,attack:9,defense:2,exp:16,gold:32,sprite:'🦁',poison:false,terrain:['cave','mountain'],drops:[{item:'ちからのたね',chance:0.2}]},
+                {name:'スプライト',hp:15,attack:10,defense:2,exp:17,gold:38,sprite:'✨',poison:false,terrain:['forest','snow'],drops:[{item:'やくそう',chance:0.35}]},
+                {name:'オーガ',hp:24,attack:10,defense:3,exp:19,gold:42,sprite:'👹',poison:false,terrain:['cave','swamp'],drops:[{item:'どうのつるぎ',chance:0.15,type:'weapon',attack:7}]},
+                {name:'ゴブリンメイジ',hp:18,attack:6,defense:5,exp:16,gold:25,sprite:'👹',poison:false,terrain:['forest','grass'],drops:[{item:'どうのつるぎ',chance:0.15,type:'weapon',attack:7}]},
+                {name:'ワイルドフォックス',hp:18,attack:11,defense:3,exp:15,gold:30,sprite:'🦁',poison:false,terrain:['forest','grass'],drops:[{item:'やくそう',chance:0.2}]},
+                {name:'ストーンジャ',hp:24,attack:12,defense:6,exp:20,gold:40,sprite:'🪨',poison:false,terrain:['mountain','cave'],drops:[{item:'やくそう',chance:0.2}]},
+                {name:'パフィークラゲ',hp:16,attack:9,defense:2,exp:12,gold:22,sprite:'🪼',poison:false,terrain:['water'],drops:[{item:'やくそう',chance:0.2}]},
+                {name:'さまよいナイト',hp:28,attack:10,defense:6,exp:24,gold:45,sprite:'🛡',poison:false,terrain:['cave','swamp'],drops:[{item:'どうのつるぎ',chance:0.2,type:'weapon',attack:6}]},
+                {name:'ブラウンオーク',hp:26,attack:12,defense:5,exp:22,gold:44,sprite:'🐗',poison:false,terrain:['forest','grass'],drops:[{item:'やくそう',chance:0.2}]},
+                {name:'スピンビー',hp:14,attack:11,defense:2,exp:10,gold:18,sprite:'🐝',poison:true,terrain:['flower','forest'],drops:[{item:'どくけしそう',chance:0.25}]},
+                {name:'ランタンモス',hp:18,attack:8,defense:8,exp:14,gold:24,sprite:'🦁',poison:false,terrain:['forest','swamp'],drops:[{item:'やくそう',chance:0.2}]},
+                {name:'グラススネーク',hp:17,attack:9,defense:4,exp:12,gold:22,sprite:'🐍',poison:true,terrain:['grass','forest'],drops:[{item:'どくけしそう',chance:0.25}]},
+                {name:'メタルパピー',hp:15,attack:9,defense:12,exp:24,gold:50,sprite:'🐶',poison:false,terrain:['mountain','grass'],drops:[{item:'てつのかぶと',chance:0.15,type:'helmet',defense:3}]},
+
+                // 上級モンスター�E�Eave, mountain�E�E                {name:'ゴーレム',hp:35,attack:9,defense:10,exp:26,gold:60,sprite:'🗿',poison:false,terrain:['cave','mountain'],drops:[{item:'てつのかぶと',chance:0.2,type:'helmet',defense:4}]},
+                {name:'キラーナイト',hp:30,attack:14,defense:7,exp:28,gold:65,sprite:'🛡',poison:false,terrain:['cave'],drops:[{item:'はがねのつるぎ',chance:0.12,type:'weapon',attack:10}]},
+                {name:'魔術師',hp:22,attack:13,defense:4,exp:27,gold:55,sprite:'🧁',poison:false,terrain:['cave','swamp'],drops:[{item:'やくそう',chance:0.4}]},
+                {name:'野武士',hp:26,attack:12,defense:6,exp:25,gold:58,sprite:'🥾',poison:false,terrain:['desert','swamp'],drops:[{item:'gold',amount:100,chance:0.25}]},
+                {name:'森の魔女',hp:23,attack:14,defense:4,exp:29,gold:62,sprite:'👵',poison:false,terrain:['forest'],drops:[{item:'やくそう',chance:0.5}]},
+                {name:'ゴブリンロード',hp:32,attack:15,defense:5,exp:30,gold:70,sprite:'👹',poison:false,terrain:['cave'],drops:[{item:'ほのおのつるぎ',chance:0.1,type:'weapon',attack:15}]},
+                {name:'オーガロード',hp:40,attack:16,defense:6,exp:35,gold:85,sprite:'👹',poison:false,terrain:['cave'],drops:[{item:'ほのおのつるぎ',chance:0.12,type:'weapon',attack:20}]},
+                {name:'ブラチナナイト',hp:38,attack:17,defense:8,exp:38,gold:95,sprite:'🖤',poison:false,terrain:['cave'],drops:[{item:'ほのおのつるぎ',chance:0.15,type:'weapon',attack:20}]},
+                
+                {name:'ブラックゴブリン',hp:24,attack:12,defense:4,exp:20,gold:45,sprite:'🩸',poison:false,terrain:['forest','swamp'],drops:[{item:'やくそう',chance:0.25}]},
+                {name:'オークソードマン',hp:28,attack:13,defense:5,exp:22,gold:48,sprite:'🗡',poison:false,terrain:['forest','cave'],drops:[{item:'どうのつるぎ',chance:0.15,type:'weapon',attack:6}]},
+                {name:'ジャングルゲリュオン',hp:34,attack:14,defense:6,exp:28,gold:60,sprite:'🐆',poison:false,terrain:['forest','swamp'],drops:[{item:'ちからのたね',chance:0.2}]},
+                {name:'ストーンゴーレム',hp:42,attack:12,defense:12,exp:32,gold:75,sprite:'🪨',poison:false,terrain:['mountain','cave'],drops:[{item:'てつのかぶと',chance:0.2,type:'helmet',defense:3}]},
+                {name:'しにがみ兵',hp:30,attack:15,defense:6,exp:26,gold:65,sprite:'💀',poison:false,terrain:['cave','swamp'],drops:[{item:'どくけしそう',chance:0.25}]},
+                {name:'シャドウコマンダー',hp:36,attack:17,defense:7,exp:34,gold:80,sprite:'🗡',poison:false,terrain:['cave','desert'],drops:[{item:'はがねのつるぎ',chance:0.15,type:'weapon',attack:10}]},
+                {name:'コールドリザード',hp:28,attack:12,defense:5,exp:22,gold:52,sprite:'🦁',poison:false,terrain:['snow','mountain'],drops:[{item:'やくそう',chance:0.2}]},
+                {name:'ファイアリザード',hp:26,attack:14,defense:4,exp:24,gold:55,sprite:'🔥',poison:false,terrain:['desert','cave'],drops:[{item:'やくそう',chance:0.2}]},
+                {name:'ブルーホーネット',hp:20,attack:13,defense:3,exp:19,gold:40,sprite:'🐝',poison:true,terrain:['forest','flower'],drops:[{item:'どくけしそう',chance:0.3}]},
+                {name:'サーペントナイト',hp:34,attack:15,defense:6,exp:30,gold:70,sprite:'🐍',poison:true,terrain:['swamp','water'],drops:[{item:'ちからのたね',chance:0.2}]},
+                {name:'スコーピオン',hp:32,attack:17,defense:5,exp:32,gold:75,sprite:'🦁',poison:true,terrain:['desert','cave'],drops:[{item:'どくけしそう',chance:0.4}]},
+                {name:'ミストミノタウロス',hp:44,attack:18,defense:9,exp:40,gold:90,sprite:'🐂',poison:false,terrain:['swamp','mountain'],drops:[{item:'はがねのつるぎ',chance:0.18,type:'weapon',attack:10}]},
+                {name:'アイアンガーゴイル',hp:30,attack:14,defense:10,exp:30,gold:70,sprite:'🗿',poison:false,terrain:['mountain','cave'],drops:[{item:'てつのかぶと',chance:0.2,type:'helmet',defense:3}]},
+                {name:'ソウルレンジャー',hp:26,attack:13,defense:5,exp:24,gold:55,sprite:'🏹',poison:false,terrain:['forest','swamp'],drops:[{item:'ショートボウ',chance:0.15,type:'weapon',attack:4,ranged:true}]},
+                {name:'スピアラビット',hp:18,attack:10,defense:3,exp:14,gold:30,sprite:'🐭',poison:false,terrain:['grass','forest'],drops:[{item:'やくそう',chance:0.2}]},
+                {name:'フィールドバット',hp:16,attack:9,defense:2,exp:12,gold:25,sprite:'🦁',poison:false,terrain:['grass','cave'],drops:[{item:'やくそう',chance:0.15}]},
+                {name:'ビートルファイター',hp:25,attack:12,defense:6,exp:22,gold:44,sprite:'🪲',poison:false,terrain:['forest','mountain'],drops:[{item:'ちからのたね',chance:0.2}]},
+                {name:'マッドモール',hp:20,attack:10,defense:4,exp:16,gold:30,sprite:'🐾',poison:false,terrain:['swamp','grass'],drops:[{item:'やくそう',chance:0.2}]},
+                {name:'スピリット',hp:23,attack:11,defense:5,exp:21,gold:40,sprite:'🌲',poison:false,terrain:['forest'],drops:[{item:'やくそう',chance:0.25}]},
+                {name:'ファングホーク',hp:20,attack:13,defense:3,exp:20,gold:38,sprite:'🪶',poison:false,terrain:['mountain','grass'],drops:[{item:'やくそう',chance:0.2}]},
+                {name:'サボテンファイター',hp:24,attack:12,defense:4,exp:20,gold:36,sprite:'🌵',poison:true,terrain:['desert'],drops:[{item:'どくけしそう',chance:0.3}]},
+                {name:'ボーンチック',hp:18,attack:9,defense:3,exp:14,gold:26,sprite:'🐤',poison:false,terrain:['cave','grass'],drops:[{item:'やくそう',chance:0.2}]},
+                {name:'ウォータースネイル',hp:26,attack:11,defense:6,exp:22,gold:40,sprite:'🐌',poison:false,terrain:['water','swamp'],drops:[{item:'やくそう',chance:0.2}]},
+                {name:'バイタルマッシュ',hp:20,attack:10,defense:3,exp:16,gold:28,sprite:'🍄',poison:false,terrain:['forest','swamp'],drops:[{item:'やくそう',chance:0.25}]},
+                {name:'ブッシュバード',hp:19,attack:9,defense:3,exp:15,gold:26,sprite:'🐦',poison:false,terrain:['grass','forest'],drops:[{item:'やくそう',chance:0.15}]},
+                {name:'レースパイク',hp:21,attack:12,defense:4,exp:18,gold:34,sprite:'🪸',poison:false,terrain:['water','desert'],drops:[{item:'やくそう',chance:0.2}]},
+                {name:'ノロイヒルドッグ',hp:24,attack:13,defense:4,exp:21,gold:38,sprite:'🐕',poison:true,terrain:['swamp','grass'],drops:[{item:'どくけしそう',chance:0.25}]},
+                {name:'スケイルファング',hp:26,attack:14,defense:5,exp:24,gold:46,sprite:'🐉',poison:false,terrain:['mountain','cave'],drops:[{item:'やくそう',chance:0.2}]},
+                {name:'アイアンビートル',hp:30,attack:13,defense:8,exp:26,gold:50,sprite:'🪲',poison:false,terrain:['forest','mountain'],drops:[{item:'てつのかぶと',chance:0.15,type:'helmet',defense:3}]},
+                {name:'スモールアント',hp:18,attack:8,defense:2,exp:12,gold:22,sprite:'🐜',poison:true,terrain:['swamp','desert'],drops:[{item:'どくけしそう',chance:0.3}]},
+                {name:'スワンプフロッグ',hp:20,attack:9,defense:3,exp:14,gold:24,sprite:'🐸',poison:false,terrain:['swamp'],drops:[{item:'やくそう',chance:0.2}]},
+                {name:'カラスウォリア',hp:22,attack:12,defense:4,exp:18,gold:34,sprite:'🐦',poison:false,terrain:['grass','forest'],drops:[{item:'やくそう',chance:0.2}]},
+                {name:'レーバイパー',hp:19,attack:11,defense:3,exp:15,gold:28,sprite:'🐍',poison:true,terrain:['grass','swamp'],drops:[{item:'どくけしそう',chance:0.25}]},
+                {name:'シャドウラビット',hp:17,attack:10,defense:3,exp:14,gold:26,sprite:'🐀',poison:false,terrain:['cave','swamp'],drops:[{item:'やくそう',chance:0.15}]},
+            ],
+
+            npcs: [
+                {
+                    name: '冒険者', sprite: '',
+                    messages: [
+                        '森にはモンスターが多いが、経験値稼ぎにはもってこいだぜ！',
+                        'お前も頑張ってな。',
+                        '強い敵を倒すのは気持ちいいぞ。',
+                        'この仕事は辛いが、やりがいがある。',
+                        'どこに向かってるんだ？',
+                        '装備をしっかり整えるんだぞ。',
+                        '経験値は嘘をつかない。',
+                        '死ぬなよ。本気でな。',
+                        'いい仲間がいると強くなれる。',
+                        '敵の弱点を見つけるのが大事だ。',
+                        '毎日が冒険だぜ。',
+                        '後悔のない人生を歩もうぜ。',
+                        '失敗なんて誰にでもあるんだ。',
+                        '君の目、輝いてるな。'
+                    ]
+                },
+                {
+                    name: '魔法使い', sprite: '✨',
+                    messages: [
+                        '魔法は敵グループに大きなダメージを与えられるぞ。',
+                        '魔法の修行に終わりはない。',
+                        '自然の力を借りるのが魔法だ。',
+                        'この力は危険でもある。',
+                        'もっと修行を積むんだ。',
+                        '魔力を感じるか！',
+                        '呪文は正確に唱えるんだ。',
+                        '魔法は好奇心と信念だ。',
+                        '属性を理解することが大事だ。',
+                        '魔法を甘く見るんじゃないぞ。',
+                        '修行が足りないなら鍛えろ。',
+                        '力を求めるな。知識を求めろ。',
+                        '魔法で人を助けることが本来の姿だ。',
+                        '君にも魔法の才能があるかもしれないな。'
+                    ]
+                },
+                {
+                    name: '武器商人', sprite: '🛡',
+                    messages: [
+                        '良い武器を手に入れれば強敵にも勝てるはずだ。',
+                        '最高の武器を作るために人生を費やした。',
+                        '質の良い武器は値が張るものだ。',
+                        '君の武器はまだまだだな。',
+                        '武器は扱い方が大事なんだ。',
+                        '良い武器は良い素材から生まれるんだ。',
+                        '剣を磨くというのは心を磨くことでもあるんだ。',
+                        '金をケチるな。命がかかってるんだ。',
+                        'このセール品、本当にお買い得だぜ。',
+                        '強敵には強い武器が必要だ。',
+                        '一流の武器は戦い方も変えるんだ。',
+                        '武器に名前をつけるといいぞ。',
+                        '手入れを怠るなよ。',
+                        '武器は道具だが、相棒でもあるんだ。'
+                    ]
+                },
+                {
+                    name: '踊り子', sprite: '💃',
+                    messages: [
+                        '強くなるには経験を積むことが大事よ。',
+                        '毎晩ここで踊ってるんだ。',
+                        '君も踊ってみたら？',
+                        '体を動かすと気持ちいいの。',
+                        '音楽に合わせて動くのは最高よ。',
+                        '踊りは戦いと同じよ。リズムが大事。',
+                        '失敗しても立ち上がるんだ。',
+                        '心を軽くしてみたら？',
+                        '毎日が新しい舞台よ。',
+                        '君の動きに勢いがあるね。',
+                        'もっと自分を信じて。',
+                        '踊るように生きるのよ。',
+                        'つらい時も体を動かすといいわ。',
+                        '君にも踊りの適性があるかもね。'
+                    ]
+                },
+                {
+                    name: '僧侶', sprite: '⛪',
+                    messages: [
+                        'このあたりは聖なる土地とされているんだ。',
+                        '神の加護がありますように。',
+                        '信仰は心の支えだ。',
+                        '祈ることで心は落ち着く。',
+                        'この世界の秘密を知りたくてね。',
+                        '迷った時は祈るんだ。',
+                        '神は見守ってくださっている。',
+                        '罪を悔い改めることで心は救われる。',
+                        'どんな時も希望を忘れるな。',
+                        '毎日祈ることが大事なんだ。',
+                        '人を助けることが神の教えだ。',
+                        '困った時は頼っていいんだ。',
+                        '魂の救済が私たちの役目だ。',
+                        '君は心が清らかなようだね。'
+                    ]
+                },
+                {
+                    name: '盗賊', sprite: '🥷',
+                    messages: [
+                        '金ならここらでたっぷり稼げるぜ。',
+                        '昔の俺は本当に悪党だった。',
+                        'それでも生き方を変えたんだ。',
+                        'お前も少し道を外れると楽しいぜ？',
+                        'この世界は弱肉強食だ。',
+                        '危険を冒して生きてる今が本当だ。',
+                        'スピードと動きが大事なんだ。',
+                        '影に隠れるスキルを学ぶといい。',
+                        '社会の裏側は本当に怖いぞ。',
+                        '信頼は何より大事だ。',
+                        '正義とは何か、考えたことはあるか？',
+                        '俺たちも認められたいんだ。',
+                        '逃げるスキルも大事だぞ。',
+                        '君、強い覚悟を持ってるな。'
+                    ]
+                },
+                {
+                    name: '狩人', sprite: '🏹',
+                    messages: [
+                        '怪物たちは弱い個体から狙うのが得策だ。',
+                        '自然の中で生きるのが最高だ。',
+                        '獲物を追うのは楽しいぞ。',
+                        '君も狩りの技を学んでみな。',
+                        '自然と共に生きるのが俺の道だ。',
+                        '弓を引く時は深呼吸をするんだ。',
+                        '獣の痕跡を読むのは経験だ。',
+                        '自然を尊重することが大事だ。',
+                        '狩りは人と獣の対話だ。',
+                        '獣は君より頭がいいかもしれないぞ。',
+                        '風を読むんだ。',
+                        '沈黙の美学を知るといい。',
+                        '獲物も生きている。敬意を持て。',
+                        '君には狩人の素質がある。'
+                    ]
+                },
+                {
+                    name: '商人の娘', sprite: '👧',
+                    messages: [
+                        '毎日いろんな人が通っていくのを見てるの。',
+                        '冒険者ってかっこいいね！',
+                        'どこから来たんですか？',
+                        '私もいつか冒険者になりたいな。',
+                        '世界を見て回りたいな。',
+                        '父さんの店はいつも忙しいの。',
+                        'いろんな話を聞くのが好きです。',
+                        'お母さんが君は良い人だって言ってたよ。',
+                        'いつか修行に出たいな。',
+                        '君の冒険の話を聞かせて！',
+                        '外の世界は怖いけど憧れるの。',
+                        'いつかこの町を出るんだ。',
+                        '強くなるってどんな気分なんだろう？',
+                        '君も頑張ってね！'
+                    ]
+                },
+                {
+                    name: '老人', sprite: '👴',
+                    messages: [
+                        '昔はここも栄えていたんだよ。',
+                        '年には勝てないねぇ。',
+                        '若い頃の思い出が大事だ。',
+                        '君たちが希望だよ。',
+                        '人生は短いようで長いようで、不思議だねぇ。',
+                        'あの頃は本当に良かったなぁ。',
+                        '時間だけが俺たちを癒すんだ。',
+                        'どんなに強くても老いには勝てないんだ。',
+                        '経験を生かしてくれよ。',
+                        '何か聞きたいことがあれば言いなさい。',
+                        '若い頃の失敗は宝物だ。',
+                        '生きることが大事なんだ。',
+                        '君たちを見てると若返った気がするよ。',
+                        '頑張っておくれ。'
+                    ]
+                },
+                {
+                    name: '少年', sprite: '👦',
+                    messages: [
+                        'いつか冒険者になるのが夢なんだ！',
+                        '君みたいに強くなりたい！',
+                        '毎日訓練してるんだ。',
+                        '世界ってどんなところ？',
+                        '君の話を聞かせてよ！',
+                        '強いって本当にかっこいいの？',
+                        '僕も早く冒険に行きたい！',
+                        '剣をくれませんか！？',
+                        '君って本当にすごいんだね！',
+                        'どうしたらそんなに強くなれるの？',
+                        '僕の修行を見てくれない？',
+                        '君の冒険はどこから始まったの？',
+                        '僕だって頑張るぞ！',
+                        '応援してるからね！'
+                    ]
+                },
+                {
+                    name: '占い師', sprite: '🔮',
+                    messages: [
+                        '君の運勢は上昇傾向にあるね。',
+                        '未来は変えられるものだ。',
+                        '星たちが君に語りかけているよ。',
+                        '大切なことを見失わないように。',
+                        '君の道は輝いている。',
+                        'どんな未来が見たい？',
+                        '占いは可能性を示すだけだ。',
+                        '宿命と運命は違うんだ。',
+                        '迷った時は占いを信じすぎるな。',
+                        '自分の直感を信じるんだ。',
+                        '星は誰にでも光を与える。',
+                        '過去は変えられないが未来は変わる。',
+                        '君には特別な何かがある。',
+                        '運命に身を任せるのではなく切り開くんだ。'
+                    ]
+                },
+                {
+                    name: '騎士', sprite: '⚔',
+                    messages: [
+                        '名誉とは強さよりも精神の在り方が重要だ。',
+                        '貴族としての誇りを持つんだ。',
+                        '正義のために戦うのが俺たちの務めだ。',
+                        '弱き者を守るのが騎士の役目だ。',
+                        '剣と心を磨き続けるのが道だ。',
+                        '恐怖に負けるな。',
+                        '一騎当千の気概を持て。',
+                        '馬術を極めるのも騎士の務めだ。',
+                        '礼儀を忘れるな。',
+                        '敵を尊重することも大事だ。',
+                        '勝つだけが良い戦いじゃない。どう勝つかだ。',
+                        '民を守る覚悟があるか？',
+                        '真の強さは精神にある。',
+                        '君にも騎士の素質がある。'
+                    ]
+                },
+                {
+                    name: '姫', sprite: '💎',
+                    messages: [
+                        '冒険は本当にロマンチックですね。',
+                        '外の世界を見てみたいです。',
+                        '城の中の生活は退屈なんです。',
+                        '君のような冒険者に憧れます。',
+                        'いつか自分の道を歩みたい。',
+                        '父は反対するでしょうけど……。',
+                        '自由って何なんでしょう？',
+                        '君の話、とても楽しいです。',
+                        '世界ってこんなに広いんですね。',
+                        '冒険に連れて行ってくれませんか？',
+                        '貴族の身であることが時々つらくなります。',
+                        '君は自分の道を決めているんですね。',
+                        '願いは叶うものなのでしょうか。',
+                        '私も変わりたいんです。'
+                    ]
+                },
+                {
+                    name: '医者', sprite: '',
+                    messages: [
+                        'やくそうなら安くてよく効くよ。',
+                        '怪我をしたら相談してくれ。',
+                        '予防が一番の医療だ。',
+                        '患者の話をよく聞くんだ。',
+                        '心の病も治療の対象だ。',
+                        '毎日が命の現場だ。',
+                        '薬だけじゃなく心も癒すんだ。',
+                        '疲れたら休むんだ。',
+                        '死と向き合う仕事だ。',
+                        '君の体調は大丈夫か？',
+                        '医学は日々進化している。',
+                        'どんな病でも諦めるな。',
+                        '命を大事にしてくれ。',
+                        '傷を放置してはいけないよ。'
+                    ]
+                }            
+            ],
+
+            spells: {
+                'ファイア': {mp:3, power:10, target:'single'},
+                'イオ': {mp:8, power:20, target:'all'},
+                'ヒール': {mp:4, power:20, target:'ally'},
+                'ブリザード': {mp:5, power:15, target:'single'},
+                'スリープ': {mp:6, power:0, target:'single'}
+            },
+            aptitudes: ['戦士タイプ','魔法使いタイプ','僧侶タイプ','盗賊タイプ','狩人タイプ','素質なしタイプ'],
+
+            shops: {
+                'weapon_shop_1': {
+                    name: 'ぶきや初級',
+                    items: [
+                        {name: 'ひのきのぼう', attack: 2, price: 50, type: 'weapon', ranged: false},
+                        {name: 'ショートボウ', attack: 4, price: 140, type: 'weapon', ranged: true},
+                        {name: 'どうのつるぎ', attack: 5, price: 150, type: 'weapon', ranged: false}
+                    ]
+                },
+                'armor_shop_1': {
+                    name: 'ぼうぐや',
+                    items: [
+                        {name: 'ぬののふく', defense: 2, price: 50, type: 'armor'},
+                        {name: 'かわのぼうし', defense: 1, price: 40, type: 'helmet'}
+                    ]
+                },
+                'weapon_shop_2': {
+                    name: 'ぶきや中級',
+                    items: [
+                        {name: 'はがねのつるぎ', attack: 10, price: 500, type: 'weapon', ranged: false},
+                        {name: 'ロングボウ', attack: 12, price: 700, type: 'weapon', ranged: true},
+                        {name: '魔導の杖', attack: 8, price: 650, type: 'weapon', ranged: true},
+                        {name: 'ほのおのつるぎ', attack: 20, price: 2000, type: 'weapon', ranged: false}
+                    ]
+                },
+                'armor_shop_2': {
+                    name: 'ぼうぐや中級',
+                    items: [
+                        {name: 'くさりかたび', defense: 10, price: 500, type: 'armor'},
+                        {name: 'てつのかぶと', defense: 3, price: 120, type: 'helmet'}
+                    ]
+                },
+                'inn': {
+                    name: 'やどや',
+                    price: 50
+                }
+            },
+
+            init() {
+                this.gameOverFlag = false;
+                if (!this.player.aptitude) this.player.aptitude = this.getRandomAptitude();
+                this.initAudio();
+                this.selectedFieldMusic = this.chooseFieldMusicSource();
+                this.generateMap();
+                this.ensurePlayerStartOnGrass();
+                this.updatePlayerPosition();
+                this.updateStatus();
+                document.addEventListener('keydown', (e) => this.handleInput(e));
+                
+                // ユーザーインタラクションで音楽を�E生できるようにする
+                const startMusic = () => {
+                    this.playFieldMusic();
+                    document.removeEventListener('click', startMusic);
+                    document.removeEventListener('keydown', startMusic);
+                };
+                document.addEventListener('click', startMusic);
+                document.addEventListener('keydown', startMusic);
+                
+                // フォールバック�E��E期化から1秒後に強制皁E��再生試衁E                
+                setTimeout(() => {
+                    if (!this.currentMusic) {
+                        this.playFieldMusic();
+                    }
+                }, 1000);
+            },
+
+            initAudio() {
+                try {
+                    this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                } catch (e) {
+                    console.log('Web Audio API not supported');
+                }
+            },
+
+            createTone(frequency, duration, volume = 0.1, type = 'sine') {
+                if (!this.audioContext) return null;
+                const oscillator = this.audioContext.createOscillator();
+                const gainNode = this.audioContext.createGain();
+                oscillator.connect(gainNode);
+                gainNode.connect(this.audioContext.destination);
+                oscillator.frequency.value = frequency;
+                oscillator.type = type;
+                gainNode.gain.setValueAtTime(volume, this.audioContext.currentTime);
+                gainNode.gain.exponentialRampToValueAtTime(0.001, this.audioContext.currentTime + duration);
+                return { oscillator, gainNode, duration };
+            },
+
+            playFieldMusic() {
+                this.stopMusic();
+                const fieldMusic = document.getElementById('field-music');
+                if (fieldMusic && this.musicEnabled) {
+                    if (this.selectedFieldMusic) {
+                        fieldMusic.src = this.selectedFieldMusic;
+                    }
+                    fieldMusic.currentTime = 0;
+                    fieldMusic.play().catch(e => console.log('Cannot play field music:', e));
+                    this.currentMusic = { type: 'field' };
+                }
+            },
+
+            playBattleMusic() {
+                this.stopMusic();
+                // 3つの戦闘音楽をランダムに選抁E                this.battleMusicIndex = Math.floor(Math.random() * 3) + 1; // 1, 2, 3のう<��れか
+                const battleMusic = document.getElementById(`battle-music-${this.battleMusicIndex}`);
+                if (battleMusic && this.musicEnabled) {
+                    battleMusic.currentTime = 0;
+                    battleMusic.play().catch(e => console.log('Cannot play battle music:', e));
+                    this.currentMusic = { type: 'battle' };
+                }
+            },
+
+            playShopMusic() {
+                this.stopMusic();
+                this.inShop = true;
+                const shopMusic = document.getElementById('shop-music');
+                if (shopMusic && this.musicEnabled) {
+                    shopMusic.currentTime = 0;
+                    shopMusic.play().catch(e => console.log('Cannot play shop music:', e));
+                    this.currentMusic = { type: 'shop' };
+                }
+            },
+
+            stopMusic() {
+                const fieldMusic = document.getElementById('field-music');
+                const shopMusic = document.getElementById('shop-music');
+                for (let i = 1; i <= 3; i++) {
+                    const battleMusic = document.getElementById(`battle-music-${i}`);
+                    if (battleMusic) {
+                        battleMusic.pause();
+                        battleMusic.currentTime = 0;
+                    }
+                }
+                if (fieldMusic) {
+                    fieldMusic.pause();
+                    fieldMusic.currentTime = 0;
+                }
+                if (shopMusic) {
+                    shopMusic.pause();
+                    shopMusic.currentTime = 0;
+                }
+                if (this.currentMusic && this.currentMusic.timeouts) {
+                    this.currentMusic.timeouts.forEach(timeout => clearTimeout(timeout));
+                }
+                this.currentMusic = null;
+            },
+
+            toggleMusic() {
+                this.musicEnabled = !this.musicEnabled;
+                const btn = document.getElementById('music-toggle-btn');
+                if (this.musicEnabled) {
+                    btn.textContent = '音楽停止';
+                    if (!this.inBattle) {
+                        this.playFieldMusic();
+                    }
+                } else {
+                    btn.textContent = '音楽再開';
+                    this.stopMusic();
+                }
+            },
+
+            playSoundEffect(soundId) {
+                const sound = document.getElementById(soundId);
+                if (sound && this.musicEnabled) {
+                    sound.currentTime = 0;
+                    sound.play().catch(e => console.log(`Cannot play sound ${soundId}:`, e));
+                }
+            },
+
+            fadeOutMusic(duration = 1000) {
+                const battleMusic = document.getElementById(`battle-music-${this.battleMusicIndex}`);
+                if (battleMusic && this.musicEnabled) {
+                    const startTime = Date.now();
+                    const initialVolume = battleMusic.volume;
+                    
+                    const fadeInterval = setInterval(() => {
+                        const elapsed = Date.now() - startTime;
+                        const progress = Math.min(elapsed / duration, 1);
+                        battleMusic.volume = initialVolume * (1 - progress);
+                        
+                        if (progress >= 1) {
+                            clearInterval(fadeInterval);
+                            battleMusic.pause();
+                            battleMusic.volume = 1; // 音量をリセチE��
+                        }
+                    }, 50);
+                }
+            },
+
+            shakeScreen(duration = 400) {
+                const gameScreen = document.getElementById('game-screen');
+                gameScreen.classList.add('shake');
+                setTimeout(() => {
+                    gameScreen.classList.remove('shake');
+                }, duration);
+            },
+
+            shakeEnemy(enemyIndex, duration = 400) {
+                const enemies = document.querySelectorAll('.enemy-container');
+                if (enemies && enemies.length > enemyIndex && enemies[enemyIndex]) {
+                    const enemy = enemies[enemyIndex];
+                    enemy.classList.add('taking-damage');
+                    setTimeout(() => {
+                        enemy.classList.remove('taking-damage');
+                    }, duration);
+                } else {
+                    console.warn('Enemy not found at index', enemyIndex);
+                }
+            },
+
+            ensurePlayerStartOnGrass() {
+                // プレイヤーの開始位置が水めE��でなう<��とを確誁E                
+                while (this.map[this.player.y][this.player.x] === 'water' || 
+                       this.map[this.player.y][this.player.x] === 'mountain') {
+                    let found = false;
+                    for (let radius = 1; radius < 20 && !found; radius++) {
+                        for (let dy = -radius; dy <= radius && !found; dy++) {
+                            for (let dx = -radius; dx <= radius && !found; dx++) {
+                                const newX = this.player.x + dx;
+                                const newY = this.player.y + dy;
+                                if (newX >= 0 && newX < this.mapSize && 
+                                    newY >= 0 && newY < this.mapSize) {
+                                    const tile = this.map[newY][newX];
+                                    if (tile === 'grass' || tile === 'forest') {
+                                        this.player.x = newX;
+                                        this.player.y = newY;
+                                        found = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if (!found) {
+                        // 見つからなう<��合�E強制皁E��草原に変更
+                        this.map[this.player.y][this.player.x] = 'grass';
+                        break;
+                    }
+                }
+            },
+
+            generateMap() {
+                const field = document.getElementById('field');
+                field.innerHTML = '';
+                
+                // マップを草原で初期匁E                
+                for (let y = 0; y < this.mapSize; y++) {
+                    this.map[y] = [];
+                    for (let x = 0; x < this.mapSize; x++) {
+                        this.map[y][x] = 'grass';
+                    }
+                }
+                
+                // 水域を生�E
+                for (let i = 0; i < 15; i++) {
+                    const centerX = Math.floor(Math.random() * this.mapSize);
+                    const centerY = Math.floor(Math.random() * this.mapSize);
+                    const size = 5 + Math.floor(Math.random() * 10);
+                    for (let dy = -size; dy <= size; dy++) {
+                        for (let dx = -size; dx <= size; dx++) {
+                            if (dx * dx + dy * dy <= size * size) {
+                                const nx = centerX + dx;
+                                const ny = centerY + dy;
+                                if (nx >= 0 && nx < this.mapSize && ny >= 0 && ny < this.mapSize) {
+                                    this.map[ny][nx] = 'water';
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // 山を生戁E                
+                for (let i = 0; i < 20; i++) {
+                    const centerX = Math.floor(Math.random() * this.mapSize);
+                    const centerY = Math.floor(Math.random() * this.mapSize);
+                    const size = 3 + Math.floor(Math.random() * 6);
+                    for (let dy = -size; dy <= size; dy++) {
+                        for (let dx = -size; dx <= size; dx++) {
+                            if (dx * dx + dy * dy <= size * size && this.map[centerY + dy]?.[centerX + dx] === 'grass') {
+                                const nx = centerX + dx;
+                                const ny = centerY + dy;
+                                if (nx >= 0 && nx < this.mapSize && ny >= 0 && ny < this.mapSize) {
+                                    this.map[ny][nx] = 'mountain';
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // 森を生戁E                
+                for (let i = 0; i < 25; i++) {
+                    const centerX = Math.floor(Math.random() * this.mapSize);
+                    const centerY = Math.floor(Math.random() * this.mapSize);
+                    const size = 4 + Math.floor(Math.random() * 8);
+                    for (let dy = -size; dy <= size; dy++) {
+                        for (let dx = -size; dx <= size; dx++) {
+                            if (dx * dx + dy * dy <= size * size && this.map[centerY + dy]?.[centerX + dx] === 'grass') {
+                                const nx = centerX + dx;
+                                const ny = centerY + dy;
+                                if (nx >= 0 && nx < this.mapSize && ny >= 0 && ny < this.mapSize) {
+                                    this.map[ny][nx] = 'forest';
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // 砂漠を生戁E                
+                for (let i = 0; i < 10; i++) {
+                    const centerX = Math.floor(Math.random() * this.mapSize);
+                    const centerY = Math.floor(Math.random() * this.mapSize);
+                    const size = 6 + Math.floor(Math.random() * 10);
+                    for (let dy = -size; dy <= size; dy++) {
+                        for (let dx = -size; dx <= size; dx++) {
+                            if (dx * dx + dy * dy <= size * size && this.map[centerY + dy]?.[centerX + dx] === 'grass') {
+                                const nx = centerX + dx;
+                                const ny = centerY + dy;
+                                if (nx >= 0 && nx < this.mapSize && ny >= 0 && ny < this.mapSize) {
+                                    this.map[ny][nx] = 'desert';
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // 雪原を生�E
+                for (let i = 0; i < 8; i++) {
+                    const centerX = Math.floor(Math.random() * this.mapSize);
+                    const centerY = Math.floor(Math.random() * this.mapSize);
+                    const size = 5 + Math.floor(Math.random() * 8);
+                    for (let dy = -size; dy <= size; dy++) {
+                        for (let dx = -size; dx <= size; dx++) {
+                            if (dx * dx + dy * dy <= size * size && this.map[centerY + dy]?.[centerX + dx] === 'grass') {
+                                const nx = centerX + dx;
+                                const ny = centerY + dy;
+                                if (nx >= 0 && nx < this.mapSize && ny >= 0 && ny < this.mapSize) {
+                                    this.map[ny][nx] = 'snow';
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // 沼地を生戁E                
+                for (let i = 0; i < 12; i++) {
+                    const centerX = Math.floor(Math.random() * this.mapSize);
+                    const centerY = Math.floor(Math.random() * this.mapSize);
+                    const size = 3 + Math.floor(Math.random() * 5);
+                    for (let dy = -size; dy <= size; dy++) {
+                        for (let dx = -size; dx <= size; dx++) {
+                            if (dx * dx + dy * dy <= size * size && this.map[centerY + dy]?.[centerX + dx] === 'grass') {
+                                const nx = centerX + dx;
+                                const ny = centerY + dy;
+                                if (nx >= 0 && nx < this.mapSize && ny >= 0 && ny < this.mapSize) {
+                                    this.map[ny][nx] = 'swamp';
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                // 洞窟を生�E
+                for (let i = 0; i < 5; i++) {
+                    const x = Math.floor(Math.random() * this.mapSize);
+                    const y = Math.floor(Math.random() * this.mapSize);
+                    if (this.map[y][x] === 'mountain') {
+                        this.map[y][x] = 'cave';
+                    }
+                }
+                
+                // 町と店を配置�E�スタート地点から近い頁E��配置�E�E                
+                const buildings = [
+                    {x: 50, y: 45, type: 'town'},
+                    {x: 48, y: 42, type: 'weapon_shop_1'},  // 初級武器屋（近い�E�E                    
+                    {x: 52, y: 42, type: 'armor_shop_1'},   // 初級防具屋（近い�E�E                    
+                    {x: 50, y: 38, type: 'inn'},            // 宿屋（近い�E�E                    
+                    {x: 70, y: 30, type: 'weapon_shop_2'},  // 中級武器屋（遠う<��E                    
+                    {x: 30, y: 70, type: 'armor_shop_2'}    // 中級防具屋（遠う<��E                
+                    ];
+                buildings.forEach(b => {
+                    for (let dy = -3; dy <= 3; dy++) {
+                        for (let dx = -3; dx <= 3; dx++) {
+                            const nx = b.x + dx;
+                            const ny = b.y + dy;
+                            if (nx >= 0 && nx < this.mapSize && ny >= 0 && ny < this.mapSize) {
+                                this.map[ny][nx] = 'grass';
+                            }
+                        }
+                    }
+                    this.map[b.y][b.x] = b.type;
+                });
+                
+                // タイルを描画
+                for (let y = 0; y < this.mapSize; y++) {
+                    for (let x = 0; x < this.mapSize; x++) {
+                        const tile = document.createElement('div');
+                        tile.className = 'tile ' + this.map[y][x];
+                        field.appendChild(tile);
+                    }
+                }
+                
+                this.updateCamera();
+            },
+
+            handleInput(e) {
+                if (this.gameOverFlag) return;
+                if (this.inBattle) return;
+                const menuOpen = document.getElementById('equipment-menu') && document.getElementById('equipment-menu').style.display === 'block' ||
+                                 document.getElementById('shop-menu') && document.getElementById('shop-menu').style.display === 'block' ||
+                                 document.getElementById('inn-menu') && document.getElementById('inn-menu').style.display === 'block';
+                if (menuOpen) return;
+                
+                let newX = this.player.x, newY = this.player.y;
+                switch(e.key) {
+                    case 'ArrowUp': newY--; break;
+                    case 'ArrowDown': newY++; break;
+                    case 'ArrowLeft': newX--; break;
+                    case 'ArrowRight': newX++; break;
+                    default: return;
+                }
+                if (newX >= 0 && newX < this.mapSize && newY >= 0 && newY < this.mapSize) {
+                    const tile = this.map[newY][newX];
+                    if (tile !== 'water' && tile !== 'mountain') {
+                        this.player.x = newX;
+                        this.player.y = newY;
+                        this.updatePlayerPosition();
+                        this.updateCamera();
+                        
+                        // タイル種別に応じたメッセージ表示                        
+                        if (tile === 'town') {
+                            this.showMessage('ようこそ、町へ。ここは安全な場所です');
+                        } else if (tile.startsWith('weapon_shop') || tile.startsWith('armor_shop')) {
+                            this.openShop(tile);
+                        } else if (tile === 'inn') {
+                            this.openInn();
+                        } else {
+                            // エンカウント判定（安全な場所以外で1ステップ後に判定！
+                            this.checkEncounter(tile);
+                        }
+                    }
+                }
+            },
+
+            checkEncounter(tile) {
+                // 毒ダメージを与えめ
+                if (this.player.poisoned) {
+                    const result = this.applyPoisonTick(this.player, 'field');
+                    if (result === 'player_dead') { this.gameOver(); return; }
+                }
+                for (const comp of this.companions.filter(c => c.alive !== false && c.poisoned)) {
+                    const result = this.applyPoisonTick(comp, 'field');
+                    if (result === 'player_dead') { this.gameOver(); return; }
+                }
+
+                let encounterRate = 0;
+                
+                if (tile === 'grass') {
+                    encounterRate = 0.15;
+                } else if (tile === 'forest') {
+                    encounterRate = 0.35;
+                } else if (tile === 'desert') {
+                    encounterRate = 0.2;
+                } else if (tile === 'swamp') {
+                    encounterRate = 0.3;
+                } else if (tile === 'snow') {
+                    encounterRate = 0.25;
+                } else if (tile === 'cave') {
+                    this.showMessage('洞窟だ�E�強敵が潜んでう<��う<��...');
+                    encounterRate = 0.5;
+                }
+                
+                if (encounterRate > 0 && Math.random() < encounterRate) {
+                    // エンカウント判定：NPCに会うか敵と戦う
+                    if (tile === 'grass' && Math.random() < 0.1 / 0.15) {
+                        this.meetNPC();
+                    } else {
+                        this.startBattle(tile);
+                    }
+                }
+            },
+
+            updateCamera() {
+                const container = document.getElementById('field-container');
+                const offsetX = Math.min(Math.max(0, this.player.x - Math.floor(this.viewportWidth / 2)), this.mapSize - this.viewportWidth);
+                const offsetY = Math.min(Math.max(0, this.player.y - Math.floor(this.viewportHeight / 2)), this.mapSize - this.viewportHeight);
+                container.style.transform = `translate(-${offsetX * 30}px, -${offsetY * 30}px)`;
+            },
+
+            updatePlayerPosition() {
+                const player = document.getElementById('player');
+                const viewCenterX = Math.floor(this.viewportWidth / 2);
+                const viewCenterY = Math.floor(this.viewportHeight / 2);
+                
+                let displayX = viewCenterX;
+                let displayY = viewCenterY;
+                
+                // マップ端にいる場合の調整
+                if (this.player.x < viewCenterX) {
+                    displayX = this.player.x;
+                } else if (this.player.x >= this.mapSize - viewCenterX) {
+                    displayX = this.viewportWidth - (this.mapSize - this.player.x);
+                }
+                
+                if (this.player.y < viewCenterY) {
+                    displayY = this.player.y;
+                } else if (this.player.y >= this.mapSize - viewCenterY) {
+                    displayY = this.viewportHeight - (this.mapSize - this.player.y);
+                }
+                
+                player.style.left = displayX * 30 + 'px';
+                player.style.top = displayY * 30 + 'px';
+                
+                // レベルによって見た目を変更
+                if (this.player.level >= 10) {
+                    player.style.background = 'linear-gradient(135deg, #ffd700, #ffed4e)';
+                    player.style.boxShadow = '0 0 15px rgba(255,215,0,0.8)';
+                } else if (this.player.level >= 7) {
+                    player.style.background = 'linear-gradient(135deg, #ff6b6b, #ffd700)';
+                    player.style.boxShadow = '0 0 12px rgba(255,107,107,0.7)';
+                } else if (this.player.level >= 4) {
+                    player.style.background = 'linear-gradient(135deg, #4ecdc4, #44a5ff)';
+                    player.style.boxShadow = '0 0 10px rgba(78,205,196,0.6)';
+                } else {
+                    player.style.background = '#ff0';
+                    player.style.boxShadow = '0 0 10px rgba(255,255,0,0.5)';
+                }
+            },
+
+            startBattle(currentTerrain = null) {
+                this.inBattle = true;
+                this.commandsLocked = false;
+                this.battleEnded = false;
+                this.damageHistory = {}; // ダメージ履歴をリセット
+                this.damageTakenMax = {}; // 被ダメージの最大値を記録
+                
+                // フォーメーション初期化                
+                if (!this.player.formation) this.player.formation = 'front';
+                this.companions.forEach(c => {
+                    if (!c.formation) c.formation = 'front';
+                });
+
+                // 仲間�E生存チェチE��
+                this.aliveCompanions = this.companions.filter(c => c.alive !== false);
+                
+                // 現在のチE��インを取得（指定されてう<��う<��合！E                
+                if (!currentTerrain) {
+                    currentTerrain = this.map[this.player.y][this.player.x];
+                }
+                
+                // チE��インに応じて敵をフィルタリング
+                const availableEnemies = this.enemies.filter(enemy => 
+                    enemy.terrain && enemy.terrain.includes(currentTerrain)
+                );
+                const baseList = availableEnemies.length > 0 ? availableEnemies : this.enemies;
+                
+                // プレイヤーレベルに応じたティアと混合確率で出現ティアを決定                
+                const targetTier = this.chooseTierByLevel();
+                const tierPool = baseList.filter(e => this.getEnemyTier(e) === targetTier);
+                
+                // 利用可能な敵がない場合ベースリストから選択                
+                const pool = tierPool.length > 0 ? tierPool : baseList;
+                
+                // レベルに応じてエンカウント数を調整
+                let numEnemies;
+                if (this.player.level <= 2) {
+                    numEnemies = 1; // レベル1-2：敵1体                
+                    } else if (this.player.level <= 4) {
+                    numEnemies = Math.floor(Math.random() * 2) + 1; // レベル3-4：敵1-2体                
+                    } else if (this.player.level <= 6) {
+                    numEnemies = Math.floor(Math.random() * 2) + 2; // レベル5-6：敵2-3体                
+                    } else {
+                    numEnemies = Math.floor(Math.random() * 4) + 1; // レベル7以上：敵1-4体                
+                    }
+                
+                this.currentEnemies = [];
+                for (let i = 0; i < numEnemies; i++) {
+                    const enemy = JSON.parse(JSON.stringify(pool[Math.floor(Math.random() * pool.length)]));
+                    enemy.id = i;
+                    enemy.asleep = false;
+                    
+                    // 個体ごとにステータスに-20%から+20%のランダム変動を加える
+                    const variationRate = (Math.random() * 0.4) - 0.2; // -0.2 から 0.2 (±20%)
+                    enemy.hp = Math.max(1, Math.floor(enemy.hp * (1 + variationRate)));
+                    enemy.attack = Math.max(1, Math.floor(enemy.attack * (1 + variationRate)));
+                    enemy.defense = Math.max(0, Math.floor(enemy.defense * (1 + variationRate)));
+                    enemy.exp = Math.max(1, Math.floor(enemy.exp * (1 + variationRate)));
+                    enemy.gold = Math.max(1, Math.floor(enemy.gold * (1 + variationRate)));
+                    enemy.speed = enemy.speed ? enemy.speed : 8 + Math.floor(Math.random() * 5);
+                    
+                    this.currentEnemies.push(enemy);
+                }
+                this.selectedEnemyIndex = 0;
+                document.getElementById('field-container').style.display = 'none';
+                document.getElementById('player').style.display = 'none';
+                document.getElementById('battle-screen').style.display = 'flex';
+                document.getElementById('battle-commands').style.display = 'grid';
+                document.getElementById('magic-menu').style.display = 'none';
+                document.getElementById('item-menu').style.display = 'none';
+                this.renderEnemies();
+                this.renderParty();
+                const names = this.currentEnemies.length > 1 ? `${this.currentEnemies[0].name}たち` : this.currentEnemies[0].name;
+                this.showMessage(`${names}があらわれた！`);
+                this.updateBattleInfo();
+                this.unlockCommands();
+                this.playBattleMusic();
+            },
+
+            renderParty() {
+                // 戦闘画面では仲間ステータスを非表示にする
+                const partyDisplay = document.getElementById('party-display');
+                if (partyDisplay) partyDisplay.remove();
+            },
+
+            renderFieldParty() {
+                const fieldStatus = document.getElementById('field-party-status');
+                if (!fieldStatus) return;
+
+                const segments = [];
+
+                const addControls = (type, index, member) => {
+                    const isFront = member.formation !== 'back';
+                    const btn = isFront
+                        ? `<button style="padding:4px 8px;font-size:12px;" onclick="game.setFormation('${type}', ${index ?? 'null'}, 'back')">後衛にする</button>`
+                        : `<button style="padding:4px 8px;font-size:12px;" onclick="game.setFormation('${type}', ${index ?? 'null'}, 'front')">前衛にする</button>`;
+                    return `<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;">${btn}</div>`;
+                };
+
+                const memberCardStyle = (member) => {
+                    const offset = member.formation === 'back' ? '0' : '-10px';
+                    return `padding:5px;border:1px solid #fff;border-radius:3px;position:relative;top:${offset};`;
+                };
+
+                const poisonTag = (m) => m.poisoned ? ' <span style="color:#f0f;">毁E/span>' : '';
+
+                segments.push(`<div style="${memberCardStyle(this.player)}">
+                    <strong>${this.player.name}</strong> <span style="font-size:12px;color:#0ff;">${this.player.formation === 'back' ? '後衛: ' : '前衛'}</span>${poisonTag(this.player)}<br>
+                    職: ${this.player.job}<br>
+                    HP: <span style="color:${this.getHpColor(this.player)}">${this.player.hp}</span>/${this.player.maxHp} / MP: ${this.player.mp}/${this.player.maxMp}
+                    ${addControls('player', null, this.player)}
+                </div>`);
+
+                this.companions
+                    .filter(c => c.alive !== false)
+                    .forEach(c => {
+                        segments.push(`<div style="${memberCardStyle(c)}">
+                            <strong>${c.name}</strong> <span style="font-size:12px;color:#0ff;">${c.formation === 'back' ? '後衛: ' : '前衛'}</span>${poisonTag(c)}<br>
+                            職: ${c.job}<br>
+                            HP: <span style="color:${this.getHpColor(c)}">${c.hp}</span>/${c.maxHp} / MP: ${c.mp}/${c.maxMp}
+                            ${addControls('companion', this.companions.indexOf(c), c)}
+                        </div>`);
+                    });
+
+                fieldStatus.innerHTML = segments.join('');
+            },
+
+            getNextCompanionName(gender = 'neutral') {
+                const pool = gender === 'male' ? this.companionHumanNamesMale :
+                              gender === 'female' ? this.companionHumanNamesFemale :
+                              this.companionHumanNamesNeutral;
+                return pool[Math.floor(Math.random() * pool.length)];
+            },
+
+            getRecruitJobForNPC(npc) {
+                if (!npc) return this.companionNames[this.companionNameIndex % this.companionNames.length];
+                const spriteJobMap = {
+                    '✨': '魔法使い',
+                    '🧁': '占い師',
+                    '👴': '僧侶',
+                    '🗡': '戦士',
+                    '🛡': '騎士',
+                    '🏹': '狩人',
+                    '💃': '踊り子',
+                    '🧑‍🍳': '料理人',
+                    '🧑‍🏭': '武具職人'
+                };
+                if (npc.sprite && spriteJobMap[npc.sprite]) {
+                    return spriteJobMap[npc.sprite];
+                }
+                if (npc.name && npc.name.includes('占')) return '魔法使い';
+                if (npc.name && npc.name.includes('魔')) return '魔法使い';
+                if (npc.name && npc.name.includes('賢')) return '僧侶';
+                if (npc.name && npc.name.includes('僧')) return '僧侶';
+                if (npc.name && npc.name.includes('武器')) return '武具職人';
+                if (npc.name && npc.name.includes('盗')) return '盗賊';
+                if (npc.name && npc.name.includes('狩')) return '狩人';
+                if (npc.name && npc.name.includes('商人')) return '商人';
+                if (npc.name && npc.name.includes('騎')) return '騎士';
+                if (npc.name && npc.name.includes('踊')) return '踊り子';
+                return '戦士';
+            },
+
+            getNPCGender(npc) {
+                if (npc && npc.gender) return npc.gender;
+                if (npc && npc.name && (npc.name.includes('姫') || npc.name.includes('威'))) return 'female';
+                return 'male';
+            },
+
+            getRandomAptitude() {
+                return this.aptitudes[Math.floor(Math.random() * this.aptitudes.length)];
+            },
+
+            chooseFieldMusicSource() {
+                const list = ['ファンタジー-異変-.mp3','field.mp3','ファンタジー7-街-.mp3'];
+                return list[Math.floor(Math.random() * list.length)];
+            },
+
+            getEnemyTier(enemy) {
+                const exp = enemy.exp || 1;
+                const superNames = ['ゴーレム', 'キラーナイト', 'オーガロード', '森の魔女', 'ブラッディナイト', 'ミストミノタウロス', 'シャドウコマンダー'];
+                if (superNames.includes(enemy.name)) return 'super';
+                if (exp < 15) return 'low';
+                if (exp < 30) return 'mid';
+                return 'high';
+            },
+
+            chooseTierByLevel() {
+                let base = 'low';
+                if (this.player.level <= 3) {
+                    base = 'low';
+                } else if (this.player.level <= 6) {
+                    base = 'mid';
+                } else if (this.player.level <= 12) {
+                    base = 'high';
+                } else {
+                    base = 'high';
+                }
+
+                const r = Math.random();
+                if (base === 'low') {
+                    return r < 0.1 ? 'mid' : 'low';
+                } else if (base === 'mid') {
+                    if (r < 0.15) return 'low';
+                    if (r < 0.30) return 'high';
+                    return 'mid';
+                } else { // base high
+                    if (r < 0.15) return 'mid';
+                    if (r < 0.30 && this.player.level >= 13) return 'super';
+                    return 'high';
+                }
+            },
+
+            getCompanionTemplate(job) {
+                const templates = {
+                    '戦士': { hp: 32, mp: 0, attack: 6, defense: 4, speed: 8 },
+                    '騎士': { hp: 30, mp: 6, attack: 6, defense: 5, speed: 7 },
+                    '魔法使い': { hp: 18, mp: 14, attack: 2, defense: 2, speed: 10 },
+                    '僧侶': { hp: 22, mp: 12, attack: 2, defense: 3, speed: 9 },
+                    '盗賊': { hp: 24, mp: 0, attack: 4, defense: 3, speed: 12 },
+                    '狩人': { hp: 26, mp: 0, attack: 5, defense: 4, speed: 11 },
+                    '踊り子': { hp: 23, mp: 10, attack: 2, defense: 2, speed: 9 },
+                    '武具職人': { hp: 26, mp: 0, attack: 2, defense: 2, speed: 6 },
+                    '商人': { hp: 20, mp: 0, attack: 2, defense: 2, speed: 6 },
+                    '吟遊詩人': { hp: 20, mp: 12, attack: 2, defense: 2, speed: 10 }
+                };
+                return templates[job] || { hp: 22, mp: 8, attack: 4, defense: 3, speed: 9 };
+            },
+
+            setFormation(targetType, index, position) {
+                if (position !== 'front' && position !== 'back') return;
+                let member = null;
+                if (targetType === 'player') {
+                    member = this.player;
+                } else if (targetType === 'companion') {
+                    member = this.companions[index];
+                }
+                if (!member) return;
+
+                const currentIsBack = member.formation === 'back';
+                if ((position === 'back' && currentIsBack) || (position === 'front' && !currentIsBack)) return;
+
+                const party = [this.player, ...this.companions.filter(c => c.alive !== false)];
+                const futureFront = party.reduce((count, p) => {
+                    if (p === member) {
+                        return count + (position === 'front' ? 1 : 0);
+                    }
+                    return count + (p.formation === 'back' ? 0 : 1);
+                }, 0);
+                if (futureFront <= 0) {
+                    this.showMessage('全員後衛にはできません。誰か1人は前衛に残してください。');
+                    return;
+                }
+
+                member.formation = position;
+                const label = position === 'back' ? '後衛' : '前衛';
+                this.showMessage(`${member.name}は${label}に配置された。`);
+                this.renderFieldParty();
+                this.renderParty();
+            },
+
+            isMagicOrRanged(attacker) {
+                if (!attacker) return false;
+                if (this.hasRangedWeapon(attacker)) return true;
+                const job = attacker.job || '';
+                return job.includes('魔法使い') || job.includes('僧') || job.includes('賢') || job.includes('狩人') || job.includes('封印') || job.includes('吟遊');
+            },
+
+            meetNPC() {
+                const npc = this.npcs[Math.floor(Math.random() * this.npcs.length)];
+                const message = npc.messages[Math.floor(Math.random() * npc.messages.length)];
+                this.inBattle = true;
+                document.getElementById('field-container').style.display = 'none';
+                document.getElementById('player').style.display = 'none';
+                const bs = document.getElementById('battle-screen');
+                bs.classList.remove('force-hide');
+                bs.style.display = 'flex';
+                document.getElementById('battle-commands').style.display = 'none';
+                document.getElementById('enemy-group').innerHTML = `<div style="font-size:80px">${npc.sprite}</div>`;
+                
+                // 仲間勧誘判定！30%の確率
+                let buttons = '';
+                const nonRecruitables = ['老人','少年','商人の娘','姫','医者'];
+                const canRecruitThisNpc = !nonRecruitables.includes(npc.name);
+                if (canRecruitThisNpc && Math.random() < 0.3 && this.companions.length < 10) {
+                    const job = this.getRecruitJobForNPC(npc) || '戦士';
+                    const companionObj = { job, name: this.getNextCompanionName(this.getNPCGender(npc)) };
+                    const companionJson = encodeURIComponent(JSON.stringify(companionObj));
+                    buttons = `
+                        <button onclick="game.recruitCompanion(decodeURIComponent('${companionJson}'), '${npc.sprite}')" style="margin-top:10px;padding:10px 20px;margin-right:10px;">仲間にする</button>
+                        <button onclick="game.leaveNPC()" style="margin-top:10px;padding:10px 20px;">見送っておく</button>
+                    `;
+                } else {
+                    buttons = `<button onclick="game.leaveNPC()" style="margin-top:20px;padding:15px 30px;">わかった</button>`;
+                }
+                
+                document.getElementById('battle-info').innerHTML = `<div style="font-size:18px;margin:20px;">${npc.name}: ${message}</div>${buttons}`;
+            },
+
+            recruitCompanion(companionJson, sprite) {
+                let companionData;
+                try {
+                    companionData = typeof companionJson === 'string' ? JSON.parse(companionJson) : companionJson;
+                } catch(e) {
+                    companionData = { job: '仲間', name: this.getNextCompanionName() };
+                }
+                if (!companionData.job) companionData.job = '戦士';
+                    const baseStats = this.getCompanionTemplate(companionData.job);
+                    let factor = 0.8 + Math.random() * 0.4; // 0.8 - 1.2
+                    // レア素質補正
+                    const rareRoll = Math.random();
+                    if (rareRoll < 0.005) {
+                        // 全能劁E30%以丁E                        
+                        factor = 1.3 + Math.random() * 0.2; // 1.3 - 1.5
+                    } else if (rareRoll < 0.015) {
+                        // う<��れかの能劁E40%以丁E                        
+                        factor = 0.8 + Math.random() * 0.4;
+                        const stat = ['hp','mp','attack','defense','speed'][Math.floor(Math.random() * 5)];
+                        baseStats[stat] = Math.round(baseStats[stat] * (1.4 + Math.random() * 0.2)); // 1.4-1.6
+                    } else if (rareRoll < 0.065) {
+                        // う<��れかの能劁E30%以丁E                        
+                        const stat = ['hp','mp','attack','defense','speed'][Math.floor(Math.random() * 5)];
+                        baseStats[stat] = Math.round(baseStats[stat] * (1.3 + Math.random() * 0.1)); // 1.3-1.4
+                    }
+                const companion = {
+                    name: companionData.name,
+                    job: companionData.job,
+                    sprite: sprite,
+                    hp: Math.round(baseStats.hp * factor),
+                    maxHp: Math.round(baseStats.hp * factor),
+                    mp: Math.round(baseStats.mp * factor),
+                    maxMp: Math.round(baseStats.mp * factor),
+                    level: this.player.level,
+                    exp: 0,
+                    attack: Math.max(1, Math.round(baseStats.attack * factor)),
+                    defense: Math.max(0, Math.round(baseStats.defense * factor)),
+                    speed: Math.max(1, Math.round(baseStats.speed * factor)),
+                    poisoned: false,
+                    alive: true,
+                    aptitude: this.getRandomAptitude(),
+                    formation: 'front',
+                    equipment: {
+                        weapon: null,
+                        armor: null,
+                        helmet: null,
+                        gloves: null,
+                        boots: null
+                    },
+                    inventory: {}, // 道具ごとの各アイテムの所有数
+                    inventorySlots: 0 // 現在の道具スロット使用数
+                };
+                this.companions.push(companion);
+                this.showMessage(`${companion.job} ${companion.name}が仲間になった！`);
+                this.updateStatus();
+                this.renderFieldParty();
+                // 仲間追加後もbattle-screenを忁E��非表示に
+                const bs = document.getElementById('battle-screen');
+                bs.style.display = 'none';
+                bs.classList.add('force-hide');
+                this.leaveNPC();
+            },
+
+            addItemToCompanion(companionIndex, itemName, quantity = 1) {
+                const companion = this.companions[companionIndex];
+                if (!companion) return false;
+                
+                // 現在のスロチE��使用数をチェチE��
+                const currentCount = (companion.inventory[itemName] || 0) + quantity;
+                const addedSlots = quantity;
+                
+                // 最大10個まで
+                if (companion.inventorySlots + addedSlots > 10) {
+                    return false;
+                }
+                
+                companion.inventory[itemName] = currentCount;
+                companion.inventorySlots += addedSlots;
+                return true;
+            },
+
+            removeItemFromCompanion(companionIndex, itemName, quantity = 1) {
+                const companion = this.companions[companionIndex];
+                if (!companion || !companion.inventory[itemName]) return false;
+                
+                const current = companion.inventory[itemName];
+                if (current < quantity) return false;
+                
+                companion.inventory[itemName] -= quantity;
+                companion.inventorySlots -= quantity;
+                
+                if (companion.inventory[itemName] === 0) {
+                    delete companion.inventory[itemName];
+                }
+                return true;
+            },
+
+            leaveNPC() {
+                // NPCイベント後�E即座にバトル終亁E                
+                // NPC関連要素もクリア・非表示
+                document.getElementById('battle-info').innerHTML = '';
+                document.getElementById('enemy-group').innerHTML = '';
+                const bs = document.getElementById('battle-screen');
+                bs.style.display = 'none';
+                bs.classList.add('force-hide');
+                document.getElementById('battle-commands').style.display = 'none';
+                document.getElementById('magic-menu').style.display = 'none';
+                document.getElementById('item-menu').style.display = 'none';
+                this.endBattle(true);
+            },
+
+            renderEnemies() {
+                const bs = document.getElementById('battle-screen');
+                bs.classList.remove('force-hide');
+                bs.style.display = 'flex';
+                const group = document.getElementById('enemy-group');
+                group.innerHTML = '';
+                this.currentEnemies.forEach((enemy, i) => {
+                    const container = document.createElement('div');
+                    container.className = 'enemy-container';
+                    if (enemy.hp <= 0) {
+                        container.classList.add('dead');
+                        // 倒れた敵はクリック不可
+                    } else {
+                        if (i === this.selectedEnemyIndex) container.classList.add('selected');
+                        container.onclick = () => {
+                            this.selectedEnemyIndex = i;
+                            this.renderEnemies();
+                        };
+                    }
+                    
+                    const sprite = document.createElement('div');
+                    sprite.className = 'enemy-sprite';
+                    sprite.textContent = enemy.sprite;
+                    const number = document.createElement('div');
+                    number.className = 'enemy-number';
+                    number.textContent = this.currentEnemies.length > 1 ? String.fromCharCode(65 + i) : '';
+                    container.appendChild(sprite);
+                    container.appendChild(number);
+                    group.appendChild(container);
+                });
+            },
+
+            updateBattleInfo() {
+                const alive = this.currentEnemies.filter(e => e.hp > 0);
+                let info = alive.map((e, i) => {
+                    const idx = this.currentEnemies.indexOf(e);
+                    const letter = alive.length > 1 ? String.fromCharCode(65 + idx) + ': ' : '';
+                    return letter + e.name;
+                }).join('<br>');
+                document.getElementById('battle-info').innerHTML = info;
+            },
+
+            attack() {
+                if (this.commandsLocked) return;
+                
+                let target = this.currentEnemies[this.selectedEnemyIndex];
+                if (!target || target.hp <= 0) {
+                    this.selectNextAliveEnemy();
+                    target = this.currentEnemies[this.selectedEnemyIndex];
+                }
+                if (!target || target.hp <= 0) {
+                    this.showMessage('攻撃できる敵がいません');
+                    return;
+                }
+                
+                this.lockCommands();
+                
+                // メチE��ージボックスをクリア
+                document.getElementById('message-box').innerHTML = '';
+                
+                this.executeSpeedBasedTurn();
+            },
+
+            selectNextAliveEnemy() {
+                // 現在選択中の敵が倒れている場合、次の生きている敵を選択                
+                for (let i = 0; i < this.currentEnemies.length; i++) {
+                    if (this.currentEnemies[i].hp > 0) {
+                        this.selectedEnemyIndex = i;
+                        this.renderEnemies();
+                        return;
+                    }
+                }
+            },
+
+            openMagicMenu() {
+                if (this.commandsLocked) return;
+                document.getElementById('battle-commands').style.display = 'none';
+                document.getElementById('magic-menu').style.display = 'block';
+            },
+
+            closeMagicMenu() {
+                document.getElementById('magic-menu').style.display = 'none';
+                document.getElementById('battle-commands').style.display = 'grid';
+            },
+
+            openItemMenu() {
+                if (this.commandsLocked) return;
+                const list = document.getElementById('item-list');
+                list.innerHTML = '';
+                for (let item in this.player.inventory) {
+                    if (this.player.inventory[item] > 0) {
+                        const div = document.createElement('div');
+                        div.className = 'shop-item';
+                        div.innerHTML = `${item} ÁE${this.player.inventory[item]}`;
+                        div.onclick = () => this.useItem(item);
+                        list.appendChild(div);
+                    }
+                }
+                document.getElementById('battle-commands').style.display = 'none';
+                document.getElementById('item-menu').style.display = 'block';
+            },
+
+            closeItemMenu() {
+                document.getElementById('item-menu').style.display = 'none';
+                document.getElementById('battle-commands').style.display = 'grid';
+            },
+
+            useItem(item) {
+                if (this.player.inventory[item] <= 0) return;
+                
+                // 対象選択メニューを表示
+                this.showItemTargetMenu(item);
+            },
+
+            showItemTargetMenu(item) {
+                const targets = document.getElementById('target-menu-content');
+                targets.innerHTML = `<h3>${item}を誰に使いますか？</h3>`;
+                
+                // プレイヤーを選択肢として追加
+                const playerBtn = document.createElement('button');
+                playerBtn.className = 'target-button player';
+                playerBtn.textContent = `${this.player.name} HP: ${this.player.hp}/${this.player.maxHp}${this.player.poisoned ? '💜毒' : ''}`;
+                playerBtn.onclick = () => this.applyItemEffect(item, this.player, null);
+                targets.appendChild(playerBtn);
+                
+                // 仲間を選択肢として追加
+                this.aliveCompanions.forEach((companion, index) => {
+                    const btn = document.createElement('button');
+                    btn.className = 'target-button companion';
+                    btn.textContent = `${companion.name} HP: ${companion.hp}/${companion.maxHp}${companion.poisoned ? '💜毒' : ''}`;
+                    btn.onclick = () => this.applyItemEffect(item, companion, index);
+                    targets.appendChild(btn);
+                });
+                
+                document.getElementById('item-menu').style.display = 'none';
+                document.getElementById('item-target-menu').style.display = 'block';
+            },
+
+            closeItemTargetMenu() {
+                document.getElementById('item-target-menu').style.display = 'none';
+                document.getElementById('item-menu').style.display = 'block';
+            },
+
+            applyItemEffect(item, target, companionIndex) {
+                if (this.player.inventory[item] <= 0) return;
+                if (target && target.alive === false) return;
+                
+                this.player.inventory[item]--;
+                document.getElementById('item-target-menu').style.display = 'none';
+                this.closeItemMenu();
+                
+                let message = '';
+                if (item === 'やくそう') {
+                    const healAmount = 30;
+                    target.hp = Math.min(target.maxHp, target.hp + healAmount);
+                    message = `${target.name}にやくそうを使った！HPが${healAmount}回復した！`;
+                } else if (item === 'どくけしそう') {
+                    target.poisoned = false;
+                    message = `${target.name}にどくけしそうを使った！どくが治った！`;
+                } else if (item === 'ちからのたね') {
+                    target.attack += 1;
+                    message = `${target.name}の攻撃力が1上がった！`;
+                }
+                
+                this.showMessage(message);
+                this.updateStatus();
+                this.renderParty();
+                
+                setTimeout(() => {
+                    this.lockCommands();
+                    this.executeSpeedBasedTurn();
+                }, 300);
+            },
+
+            runAway() {
+                if (this.commandsLocked) return;
+                this.lockCommands();
+                if (Math.random() < 0.7) {
+                    this.showMessage('うまくにげきった！');
+                    setTimeout(() => {
+                        this.endBattle();
+                    }, 1500);
+                } else {
+                    this.showMessage('にげられなかった！');
+                    setTimeout(() => {
+                        this.enemiesAttack();
+                    }, 1000);
+                }
+            },
+
+            enemiesAttack() {
+                if (!this.inBattle) return;
+                const alive = this.currentEnemies.filter(e => e.hp > 0);
+                if (alive.length === 0) {
+                    this.unlockCommands();
+                    return;
+                }
+                this.lockCommands();
+                let idx = 0;
+                const attackSeq = () => {
+                    if (idx >= alive.length || !this.inBattle) {
+                        this.renderEnemies();
+                        this.updateBattleInfo();
+                        this.showMessage('あなたのターンです！');
+                        this.unlockCommands();
+                        return;
+                    }
+                    const enemy = alive[idx];
+                    this.enemyAct(enemy, () => {
+                        idx++;
+                        setTimeout(attackSeq, 400);
+                    });
+                };
+                attackSeq();
+            },
+
+            getActorSpeed(actor) {
+                const base = actor.speed || 10;
+                return Math.floor(base * (0.8 + Math.random() * 0.4));
+            },
+
+            executeSpeedBasedTurn() {
+                const enemiesAlive = this.currentEnemies.filter(e => e.hp > 0);
+                if (enemiesAlive.length === 0) {
+                    this.winBattle();
+                    return;
+                }
+
+                const participants = [
+                    { type: 'player', ref: this.player },
+                    ...this.aliveCompanions.map(c => ({ type: 'companion', ref: c })),
+                    ...enemiesAlive.map(e => ({ type: 'enemy', ref: e }))
+                ].map(p => ({ ...p, speedRoll: this.getActorSpeed(p.ref) }));
+
+                participants.sort((a, b) => b.speedRoll - a.speedRoll);
+
+                let idx = 0;
+                const actNext = () => {
+                    if (idx >= participants.length || !this.inBattle) {
+                        this.renderEnemies();
+                        this.updateBattleInfo();
+                        this.unlockCommands();
+                        return;
+                    }
+                    const actor = participants[idx];
+                    if (actor.type !== 'enemy') {
+                        const poisonResult = this.applyPoisonTick(actor.ref, 'battle');
+                        if (poisonResult === 'player_dead') { setTimeout(() => this.gameOver(), 500); return; }
+                        if (actor.ref.hp <= 0 || actor.ref.alive === false) {
+                            idx++; setTimeout(actNext, 300); return;
+                        }
+                    }
+                    if (actor.type === 'enemy' && actor.ref.hp <= 0) {
+                        idx++; setTimeout(actNext, 300); return;
+                    }
+                    if ((actor.type === 'player' || actor.type === 'companion') && this.currentEnemies.every(e => e.hp <= 0)) {
+                        this.winBattle();
+                        return;
+                    }
+                    if (actor.type === 'enemy') {
+                        this.enemyAct(actor.ref, () => {
+                            idx++; setTimeout(actNext, 400);
+                        });
+                    } else {
+                        this.playerSideAct(actor.ref, actor.type === 'player', () => {
+                            idx++; setTimeout(actNext, 400);
+                        });
+                    }
+                };
+                actNext();
+            },
+
+            pickSpell(caster) {
+                const entries = this.getAvailableSpellsForMember(caster);
+                const usable = entries.filter(s => s.mp <= caster.mp);
+                if (usable.length === 0) return null;
+
+                const injured = this.getInjuredAlly();
+                if (injured) {
+                    const heal = usable.find(s => s.target === 'ally');
+                    if (heal) return heal;
+                }
+                usable.sort((a, b) => b.mp - a.mp);
+                return usable[0];
+            },
+
+            getAvailableSpellsForMember(member) {
+                const all = Object.entries(this.spells || {}).map(([name, data]) => ({ name, ...data }));
+                if (!member || !member.job) return all;
+                const level = member.level || 1;
+                const job = member.job;
+                const allow = [];
+                if (job.includes('魔法使い')) {
+                    allow.push('ファイア');
+                    if (level >= 5) allow.push('ブリザード');
+                    if (level >= 8) allow.push('スリープ');
+                    if (level >= 10) allow.push('イオ');
+                } else if (job.includes('僧侶')) {
+                    allow.push('ヒール');
+                    if (level >= 5) allow.push('ファイア');
+                }
+                if (allow.length === 0) return [];
+                return all.filter(s => allow.includes(s.name));
+            },
+
+            applyAptitudeGrowth(member, isPlayer = false) {
+                if (!member.aptitude) member.aptitude = this.getRandomAptitude();
+                // base growth
+                let hpUp = isPlayer ? 10 : 8;
+                let mpUp = isPlayer ? 5 : 3;
+                let atkUp = isPlayer ? 2 : 1;
+                let defUp = isPlayer ? 1 : 1;
+                let spdUp = isPlayer ? 1 : 1;
+
+                switch (member.aptitude) {
+                    case '戦士タイプ':
+                        hpUp += 4;
+                        atkUp += 1;
+                        break;
+                    case '魔法使いタイプ':
+                        mpUp += 3;
+                        break;
+                    case '僧侶タイプ':
+                        mpUp += 2;
+                        hpUp += 1;
+                        break;
+                    case '盗賊タイプ':
+                        spdUp += 2;
+                        defUp = Math.max(0, defUp - 1);
+                        break;
+                    case '狩人タイプ':
+                        atkUp += 1;
+                        spdUp += 1;
+                        break;
+                    default:
+                        break;
+                }
+
+                member.maxHp += hpUp;
+                member.hp = member.maxHp;
+                member.maxMp += mpUp;
+                member.mp = member.maxMp;
+                member.attack += atkUp;
+                member.defense += defUp;
+                member.speed += spdUp;
+            },
+
+            getInjuredAlly() {
+                const members = [this.player, ...this.aliveCompanions];
+                let best = null;
+                let minRatio = 1;
+                members.forEach(m => {
+                    const ratio = m.hp / m.maxHp;
+                    if (ratio < 0.7 && ratio < minRatio) {
+                        minRatio = ratio;
+                        best = m;
+                    }
+                });
+                return best;
+            },
+
+            playerSideAct(member, isPlayer, done) {
+                let currentTarget = this.currentEnemies[this.selectedEnemyIndex];
+                if (!currentTarget || currentTarget.hp <= 0) {
+                    this.selectNextAliveEnemy();
+                    currentTarget = this.currentEnemies[this.selectedEnemyIndex];
+                }
+                if (!currentTarget || currentTarget.hp <= 0) {
+                    done();
+                    return;
+                }
+
+                const canCast = !isPlayer && member.job && member.job.includes('魔法使い') && member.mp > 0;
+                const spell = canCast ? this.pickSpell(member) : null;
+
+                if (spell) {
+                    member.mp -= spell.mp;
+                    this.playSoundEffect('player-attack-se');
+                    if (!this.damageHistory[member.name]) this.damageHistory[member.name] = 0;
+
+                    if (spell.target === 'ally') {
+                    const targetAlly = this.getInjuredAlly();
+                    if (targetAlly) {
+                        const heal = spell.power;
+                        targetAlly.hp = Math.min(targetAlly.maxHp, targetAlly.hp + heal);
+                        this.showMessage(`<span class="msg-ally">${member.name}は${spell.name}をとなえた。${targetAlly.name}のHPが${heal}回復した。</span>`);
+                        this.updateStatus();
+                            this.renderParty();
+                            done();
+                            return;
+                        }
+                    } else if (spell.target === 'all') {
+                        this.currentEnemies.filter(e => e.hp > 0).forEach(e => {
+                            let base = spell.power + member.attack - e.defense;
+                            if (spell.name === 'ファイア') base += Math.floor(Math.random() * 11) - 5; // 乱数幁E��大
+                            const dmg = Math.max(1, base);
+                            e.hp = Math.max(0, e.hp - dmg);
+                            this.damageHistory[member.name] += dmg;
+                        });
+                        this.showMessage(`<span class="msg-ally">${member.name}は${spell.name}をとなえた。敵全体にダメージを与えた。</span>`);
+                    } else {
+                        let base = spell.power + member.attack - currentTarget.defense;
+                        if (spell.name === 'ファイア') base += Math.floor(Math.random() * 11) - 5; // 乱数幁E��大
+                        const dmg = Math.max(1, base);
+                        currentTarget.hp = Math.max(0, currentTarget.hp - dmg);
+                        this.damageHistory[member.name] += dmg;
+                        this.showMessage(`<span class="msg-ally">${member.name}は${spell.name}をとなえた。${currentTarget.name}に${dmg}のダメージを与えた。</span>`);
+                    }
+
+                    this.renderEnemies();
+                    this.updateBattleInfo();
+                    if (this.checkAllDead()) {
+                        setTimeout(() => this.winBattle(), 500);
+                        done();
+                        return;
+                    }
+                    done();
+                    return;
+                }
+
+                const baseAttack = member.attack + this.getMemberEquipmentStat(member, 'attack') + (isPlayer ? 0 : 1);
+                let attackPower = baseAttack;
+                if (member.formation === 'back' && !this.isMagicOrRanged(member)) {
+                    attackPower = Math.max(1, Math.floor(attackPower / 3));
+                }
+                const rand = isPlayer ? Math.floor(Math.random() * 3) : Math.floor(Math.random() * 2);
+                const damage = Math.max(1, attackPower - currentTarget.defense + rand);
+                currentTarget.hp = Math.max(0, currentTarget.hp - damage);
+
+                if (!this.damageHistory[member.name]) {
+                    this.damageHistory[member.name] = 0;
+                }
+                    this.damageHistory[member.name] += damage;
+
+                    this.playSoundEffect('player-attack-se');
+                    this.showMessage(`<span class="msg-ally">${member.name}は${currentTarget.name}に${damage}のダメージ！</span>`);
+
+                const enemies = document.querySelectorAll('.enemy-container');
+                const enemyIndex = this.selectedEnemyIndex;
+                if (enemies && enemies.length > enemyIndex) {
+                    const enemy = enemies[enemyIndex];
+                    enemy.style.animation = 'none';
+                    setTimeout(() => {
+                        enemy.style.animation = 'enemy-shake 0.4s ease-in-out';
+                    }, 10);
+                }
+
+                if (this.checkAllDead()) {
+                    setTimeout(() => this.winBattle(), 500);
+                }
+                done();
+            },
+
+            enemyAct(enemy, done) {
+                const party = [this.player, ...this.aliveCompanions];
+                const weightedParty = [];
+                party.forEach(member => {
+                    const weight = member.formation === 'back' ? 1 : 3;
+                    for (let i = 0; i < weight; i++) weightedParty.push(member);
+                });
+                const target = weightedParty[Math.floor(Math.random() * weightedParty.length)];
+
+                // 魔法系ならファイアを使用�E�EPがあれ�E�E�E                
+                const isMage = this.isEnemyMage(enemy);
+                if (isMage) {
+                    enemy.mp = enemy.mp || 10;
+                    if (enemy.mp >= 3) {
+                        enemy.mp -= 3;
+                        const totalDefense = target.defense + this.getMemberEquipmentStat(target, 'defense');
+                        let base = 15 + Math.floor(Math.random() * 11) - 5; // ファイア乱数幅大
+                        base = base + enemy.attack - totalDefense;
+                        let damage = Math.max(1, base);
+                        if (target.formation === 'back') damage = Math.max(1, Math.ceil(damage / 2));
+                        target.hp = Math.max(0, target.hp - damage);
+                    this.playSoundEffect('enemy-attack-se');
+                    this.shakeScreen();
+                    this.updateStatus();
+                    this.renderParty();
+                    this.showMessage(`<span class="msg-enemy">${enemy.name}はファイアをとなえた。${target.name}に${damage}のダメージを与えた。</span>`);
+                    this.damageTakenMax[target.name] = Math.max(this.damageTakenMax[target.name] || 0, damage);
+                    this.updateBattleInfo();
+                    if (target === this.player && target.hp <= 0) {
+                        setTimeout(() => this.gameOver(), 1500);
+                        return;
+                    } else if (target !== this.player && target.hp <= 0) {
+                        target.alive = false;
+                        this.showMessage(`${target.name}はたおれた...`);
+                        this.aliveCompanions = this.companions.filter(c => c.alive !== false);
+                        this.renderParty();
+                    }
+                    const poisonResult = this.processPoisonAfterHit(target);
+                    if (poisonResult === 'player_dead') {
+                        setTimeout(() => this.gameOver(), 1500);
+                        return;
+                    }
+                    done();
+                    return;
+                }
+                }
+
+                const totalDefense = target.defense + this.getMemberEquipmentStat(target, 'defense');
+                let damage = Math.max(1, enemy.attack - totalDefense + Math.floor(Math.random() * 2));
+                if (target.formation === 'back') {
+                    damage = Math.max(1, Math.ceil(damage / 2));
+                }
+                target.hp = Math.max(0, target.hp - damage);
+                this.damageTakenMax[target.name] = Math.max(this.damageTakenMax[target.name] || 0, damage);
+
+                this.playSoundEffect('enemy-attack-se');
+                this.shakeScreen();
+                this.updateStatus();
+                this.renderParty();
+
+                let msg = `${enemy.name}は${target.name}に${damage}のダメージを与えた！`;
+                if (enemy.poison && !target.poisoned && Math.random() < 0.3) {
+                    target.poisoned = true;
+                    msg += '<br>どく状態になった！';
+                }
+                    this.showMessage(`<span class="msg-enemy">${msg}</span>`);
+                    this.updateBattleInfo();
+                    
+                const poisonResult = this.processPoisonAfterHit(target);
+
+                if (target === this.player && target.hp <= 0) {
+                    setTimeout(() => this.gameOver(), 1500);
+                    return;
+                } else if (target !== this.player && target.hp <= 0) {
+                    target.alive = false;
+                    this.showMessage(`${target.name}はたおれた...`);
+                    this.aliveCompanions = this.companions.filter(c => c.alive !== false);
+                    this.renderParty();
+                }
+
+                if (poisonResult === 'player_dead') {
+                    setTimeout(() => this.gameOver(), 1500);
+                    return;
+                }
+
+                done();
+            },
+            processPoisonAfterHit(target) {
+                return this.applyPoisonTick(target, 'battle');
+            },
+
+            applyPoisonTick(target, context = 'battle') {
+                if (!target || !target.poisoned) return false;
+                const poisonDamage = Math.floor(Math.random() * 2) + 1;
+                target.hp = Math.max(0, target.hp - poisonDamage);
+                this.showMessage(`<span class="msg-enemy">${target.name}は毒により${poisonDamage}のダメージを受けた！</span>`);
+                this.damageTakenMax[target.name] = Math.max(this.damageTakenMax[target.name] || 0, poisonDamage);
+                this.updateStatus();
+                this.renderParty();
+                
+                if (target === this.player && target.hp <= 0) {
+                    return 'player_dead';
+                } else if (target !== this.player && target.hp <= 0) {
+                    target.alive = false;
+                    this.showMessage(`${target.name}はたおれた...`);
+                    this.aliveCompanions = this.companions.filter(c => c.alive !== false);
+                    this.renderParty();
+                    return 'companion_dead';
+                }
+                return false;
+            },
+
+            isEnemyMage(enemy) {
+                if (!enemy || !enemy.name) return false;
+                return enemy.name.includes('魔') || enemy.name.includes('賢者') || enemy.name.includes('メイジ') || enemy.name.includes('ゴースト') || enemy.name.includes('シャドウ') || enemy.name.includes('ウィザード');
+            },
+
+            checkAllDead() {
+                return this.currentEnemies.every(e => e.hp <= 0);
+            },
+
+            winBattle() {
+                if (this.battleEnded) return;
+                this.battleEnded = true;
+                let baseExp = 0;
+                let totalGold = 0;
+                let drops = [];
+                
+                this.currentEnemies.forEach(enemy => {
+                    baseExp += enemy.exp;
+                    totalGold += enemy.gold;
+                    
+                    // ドロップ判定                    
+                    if (enemy.drops) {
+                        enemy.drops.forEach(drop => {
+                            if (Math.random() < drop.chance) {
+                                if (drop.item === 'gold') {
+                                    totalGold += drop.amount;
+                                    drops.push(`${drop.amount}ゴールド`);
+                                } else if (drop.type) {
+                                    // 裁縫品                                    
+                                    this.player.equipment[drop.type] = {
+                                        name: drop.item,
+                                        attack: drop.attack,
+                                        defense: drop.defense
+                                    };
+                                    drops.push(drop.item);
+                                } else {
+                                    // アイテム
+                                    if (!this.player.inventory[drop.item]) {
+                                        this.player.inventory[drop.item] = 0;
+                                    }
+                                    this.player.inventory[drop.item]++;
+                                    drops.push(drop.item);
+                                }
+                            }
+                        });
+                    }
+                });
+                
+                this.player.gold += totalGold;
+                
+                // ダメージ履歴に基づう経験値を配分                
+                // ダメージ合計を計算                
+                let totalDamage = 0;
+                for (let memberName in this.damageHistory) {
+                    totalDamage += this.damageHistory[memberName];
+                }
+                
+                // 経験値を配分（±20%のばらつき付き）                
+                const expVariation = (Math.random() * 0.4) - 0.2; // ±20%
+                const actualExp = Math.max(1, Math.floor(baseExp * (1 + expVariation)));
+                
+                let message = `勝利！<br>経験値${actualExp}と${totalGold}ゴールド獲得！<br>経験値配分: `;
+                
+                // 勁E��E�E経験値計算                
+                if (totalDamage > 0) {
+                    const playerDamage = this.damageHistory[this.player.name] || 0;
+                    let playerExpShare = Math.floor(actualExp * (playerDamage / totalDamage));
+                    if ((this.damageTakenMax[this.player.name] || 99) <= 1 && playerExpShare > 1) {
+                        playerExpShare = 1;
+                    }
+                    if (playerExpShare > 0) {
+                        this.player.exp += playerExpShare;
+                        message += `${this.player.name}:${playerExpShare} `;
+                    }
+                } else {
+                    this.player.exp += actualExp;
+                    message += `${this.player.name}:${actualExp} `;
+                }
+                
+                // 仲間�E経験値配�E
+                for (let companion of this.aliveCompanions) {
+                    if (totalDamage > 0) {
+                        const companionDamage = this.damageHistory[companion.name] || 0;
+                        let companionExpShare = Math.floor(actualExp * (companionDamage / totalDamage));
+                        if ((this.damageTakenMax[companion.name] || 99) <= 1 && companionExpShare > 1) {
+                            companionExpShare = 1;
+                        }
+                        if (companionExpShare > 0) {
+                            companion.exp += companionExpShare;
+                            message += `${companion.name}:${companionExpShare} `;
+                        }
+                    } else {
+                        companion.exp += actualExp;
+                        message += `${companion.name}:${actualExp} `;
+                    }
+                    this.checkCompanionLevelUp(companion);
+                }
+                
+                if (drops.length > 0) {
+                    message += `<br>${drops.join('、')}を手に入れた！`;
+                }
+                
+                this.showMessage(message);
+                this.updateStatus();
+                this.renderParty();
+                this.checkLevelUp();
+                
+                // 敵を倒した時に戦闘音楽をフェードアウト                
+                this.fadeOutMusic(1000);
+                
+                this.endBattle();
+            },
+
+            checkCompanionLevelUp(companion) {
+                const needed = companion.level * 20;
+                if (companion.exp >= needed) {
+                    companion.level++;
+                    companion.exp = 0;
+                    this.applyAptitudeGrowth(companion);
+                    this.playSoundEffect('levelup-se');
+                    this.showMessage(`${companion.name}のレベルう<{companion.level}になった！`);
+                    this.showMessage(`レベルアップ！<br>${companion.name}はレベル${companion.level}になった！`);
+                    this.renderFieldParty();
+                }
+            },
+
+            checkLevelUp() {
+                const needed = this.player.level * 20;
+                if (this.player.exp >= needed) {
+                    this.player.level++;
+                    this.player.exp = 0;
+                    this.applyAptitudeGrowth(this.player, true);
+                    this.updateStatus();
+                    
+                    // 戦闘音楽を止める
+                    const battleMusic = document.getElementById(`battle-music-${this.battleMusicIndex}`);
+                    if (battleMusic && this.musicEnabled) {
+                        battleMusic.pause();
+                        battleMusic.volume = 0.3;
+                    }
+                    
+                    // 1秒征E��てからレベルアチE�E表示
+                    setTimeout(() => {
+                        // レベルアップ効果音を再生                        
+                        this.playSoundEffect('levelup-se');
+                        this.showMessage(`レベルアップ！<br>レベル${this.player.level}になった！`);
+                    }, 1000);
+                }
+            },
+
+            gameOver() {
+                if (this.gameOverFlag) return;
+                this.gameOverFlag = true;
+                this.inBattle = false;
+                this.commandsLocked = true;
+                this.lockCommands();
+                this.stopMusic();
+                this.showMessage('あなたはしんでしまった..<br>ゲームオーバー');
+                const battleScreen = document.getElementById('battle-screen');
+                battleScreen.style.display = 'none';
+                const field = document.getElementById('field-container');
+                const player = document.getElementById('player');
+                if (field) field.style.display = 'none';
+                if (player) player.style.display = 'none';
+                const cmds = document.getElementById('battle-commands');
+                if (cmds) cmds.style.display = 'none';
+                const overlayId = 'game-over-overlay';
+                if (!document.getElementById(overlayId)) {
+                    const overlay = document.createElement('div');
+                    overlay.id = overlayId;
+                    overlay.style.position = 'absolute';
+                    overlay.style.top = '0';
+                    overlay.style.left = '0';
+                    overlay.style.width = '100%';
+                    overlay.style.height = '100%';
+                    overlay.style.background = 'rgba(0,0,0,0.9)';
+                    overlay.style.display = 'flex';
+                    overlay.style.flexDirection = 'column';
+                    overlay.style.alignItems = 'center';
+                    overlay.style.justifyContent = 'center';
+                    overlay.style.fontSize = '28px';
+                    overlay.style.color = '#f00';
+                    overlay.style.zIndex = '2000';
+                    overlay.innerHTML = 'あなたはしんでしまった..<br>ゲームオーバー';
+                    const gameScreen = document.getElementById('game-screen');
+                    if (gameScreen) gameScreen.appendChild(overlay);
+                }
+            },
+
+            endBattle(immediate = false) {
+                this.battleEnded = true;
+                const battleScreen = document.getElementById('battle-screen');
+                if (immediate) {
+                    this.inBattle = false;
+                    this.commandsLocked = false;
+                    battleScreen.style.display = 'none';
+                    battleScreen.classList.add('force-hide');
+                    battleScreen.classList.remove('fade-out');
+                    document.getElementById('field-container').style.display = 'block';
+                    document.getElementById('player').style.display = 'block';
+                    this.unlockCommands();
+                    this.showMessage('冒険をつづけよう！');
+                    this.playFieldMusic();
+                } else {
+                    // 2秒征E��してからフェードアウト開姁E                    
+                    setTimeout(() => {
+                        // フェードアウトアニメーションを追加
+                        battleScreen.classList.add('fade-out');
+                        // 2秒後に画面を非表示にしてフィールドを表示
+                        setTimeout(() => {
+                            this.inBattle = false;
+                            this.commandsLocked = false;
+                            battleScreen.style.display = 'none';
+                            battleScreen.classList.remove('fade-out');
+                            document.getElementById('field-container').style.display = 'block';
+                            document.getElementById('player').style.display = 'block';
+                            this.unlockCommands();
+                            this.showMessage('冒険をつづけよう！');
+                            this.playFieldMusic();
+                        }, 1000);
+                    }, 1000);
+                }
+            },
+
+            openShop(shopType) {
+                const shop = this.shops[shopType];
+                if (!shop) return;
+                this.currentShop = shopType;
+                const menu = document.getElementById('shop-menu');
+                const title = document.getElementById('shop-title');
+                const itemsDiv = document.getElementById('shop-items');
+                
+                title.textContent = shop.name;
+                itemsDiv.innerHTML = '';
+                
+                shop.items.forEach((item, i) => {
+                    const div = document.createElement('div');
+                    div.className = 'shop-item';
+                    const stat = item.attack ? `攻+${item.attack}` : `防+${item.defense}`;
+                    div.innerHTML = `<span>${item.name} (${stat})</span><span>${item.price}G</span>`;
+                    div.onclick = () => this.buyItem(item);
+                    itemsDiv.appendChild(div);
+                });
+                
+                menu.style.display = 'block';
+                this.playShopMusic();
+            },
+
+            buyItem(item) {
+                if (this.player.gold < item.price) {
+                    alert('おかねがたりない');
+                    return;
+                }
+                this.pendingShopItem = item;
+                this.openEquipmentTargetMenu();
+            },
+
+            closeShop() {
+                document.getElementById('shop-menu').style.display = 'none';
+                this.currentShop = null;
+                this.inShop = false;
+                this.playFieldMusic();
+                this.pendingShopItem = null;
+            },
+
+            chooseEquipmentTarget() {
+                const members = [this.player, ...this.companions.filter(c => c.alive !== false)];
+                const list = members.map((m, idx) => `${idx}: ${m.name} (${m.job || '仲間'})`).join('\n');
+                const input = prompt(`誰に装備させますか？番号を入力してください:\n${list}`, '0');
+                if (input === null) return null;
+                const idx = parseInt(input, 10);
+                if (isNaN(idx) || idx < 0 || idx >= members.length) {
+                    alert('入力が無効です。勇者に装備させます。');
+                    return this.player;
+                }
+                return members[idx];
+            },
+
+            openInn() {
+                document.getElementById('inn-menu').style.display = 'block';
+                this.playShopMusic();
+            },
+
+            closeInn() {
+                document.getElementById('inn-menu').style.display = 'none';
+                this.inShop = false;
+                this.playFieldMusic();
+            },
+
+            stayAtInn() {
+                const party = [this.player, ...this.companions];
+                const price = this.shops.inn.price * party.length;
+                if (this.player.gold >= price) {
+                    this.player.gold -= price;
+                    party.forEach(m => {
+                        if (m.alive === false) return; // 倒れた仲間は復活しない                        
+                        m.hp = m.maxHp;
+                        m.mp = m.maxMp;
+                        m.poisoned = false;
+                    });
+                    this.updateStatus();
+                    this.renderFieldParty();
+                    alert(`めいっぱい休んだ、${party.length}人で${price}G かかった、HPとMPが全回復した`);
+                    this.closeInn();
+                } else {
+                    alert('おかねがたりない');
+                }
+            },
+
+            openEquipmentMenu() {
+                this.renderEquipmentMenu();
+                document.getElementById('equipment-menu').style.display = 'block';
+            },
+
+            closeEquipmentMenu() {
+                document.getElementById('equipment-menu').style.display = 'none';
+            },
+
+            renderEquipmentMenu() {
+                const list = document.getElementById('equipment-list');
+                list.innerHTML = '';
+
+                const members = [this.player, ...this.companions.filter(c => c.alive !== false)];
+                const selectorId = 'equipment-member-selector';
+                let selector = document.getElementById(selectorId);
+                if (!selector) {
+                    selector = document.createElement('select');
+                    selector.id = selectorId;
+                    selector.style.marginBottom = '12px';
+                    selector.onchange = (e) => {
+                        this.equipmentViewIndex = parseInt(e.target.value, 10) || 0;
+                        this.renderEquipmentMenu();
+                    };
+                    list.parentElement.insertBefore(selector, list);
+                }
+
+                selector.innerHTML = members.map((m, idx) => `<option value="${idx}" ${idx === this.equipmentViewIndex ? 'selected' : ''}>${m.name} (${m.job || '仲間'})</option>`).join('');
+                const member = members[this.equipmentViewIndex] || this.player;
+
+                const slots = [
+                    { key: 'weapon', label: 'ぶうぐ' },
+                    { key: 'armor', label: 'よろい' },
+                    { key: 'helmet', label: 'かぶと' },
+                    { key: 'gloves', label: 'てぶくろ' },
+                    { key: 'boots', label: 'ぐつ' }
+                ];
+
+                slots.forEach(slot => {
+                    const div = document.createElement('div');
+                    div.className = 'equipment-item';
+                    const item = member.equipment ? member.equipment[slot.key] : null;
+
+                    if (item) {
+                        const attackStat = item.attack ? ` <span class="equipment-stat">攻+${item.attack}</span>` : '';
+                        const defenseStat = item.defense ? ` <span class="equipment-stat">防+${item.defense}</span>` : '';
+                        const ranged = item.ranged ? ` <span class="equipment-stat">遠+${item.ranged}</span>` : '';
+                        div.innerHTML = `<span>${slot.label}: ${item.name}${attackStat}${defenseStat}${ranged}</span>`;
+                    } else {
+                        div.innerHTML = `<span>${slot.label}: なし</span>`;
+                    }
+
+                    const btn = document.createElement('button');
+                    btn.textContent = '装備を変更';
+                    btn.style.marginLeft = '10px';
+                    btn.onclick = () => this.changeEquipmentSlot(this.equipmentViewIndex, slot.key);
+                    div.appendChild(btn);
+
+                    list.appendChild(div);
+                });
+
+                const totalAttack = member.attack + this.getMemberEquipmentStat(member, 'attack');
+                const totalDefense = member.defense + this.getMemberEquipmentStat(member, 'defense');
+
+                const statsDiv = document.createElement('div');
+                statsDiv.style.marginTop = '20px';
+                statsDiv.style.borderTop = '2px solid #fff';
+                statsDiv.style.paddingTop = '20px';
+                statsDiv.innerHTML = `<div style="margin-bottom: 10px;">さいだい 攻${totalAttack} 防${totalDefense}</div>`;
+                list.appendChild(statsDiv);
+            },
+
+            changeEquipmentSlot(memberIndex, slotKey) {
+                const members = [this.player, ...this.companions.filter(c => c.alive !== false)];
+                const targetMember = members[memberIndex];
+                if (!targetMember) return;
+
+                const pool = [];
+                members.forEach((m, idx) => {
+                    if (!m.equipment) return;
+                    const item = m.equipment[slotKey];
+                    if (item) {
+                        pool.push({ ownerIndex: idx, item });
+                    }
+                });
+                const options = pool.map((p, i) => `${i}: ${p.item.name}（${members[p.ownerIndex].name}が所持）`).join('\n');
+                const choice = prompt(`装備を選んで移動装備します！${targetMember.name} の ${slotKey}を、空にしたい場合は空欄で決定、\n${options}`, '');
+                if (choice === null) return;
+                if (choice.trim() === '') {
+                    if (targetMember.equipment) targetMember.equipment[slotKey] = null;
+                    this.renderEquipmentMenu();
+                    this.renderFieldParty();
+                    return;
+                }
+                const idx = parseInt(choice, 10);
+                if (isNaN(idx) || idx < 0 || idx >= pool.length) {
+                    alert('入力が無効です');
+                    return;
+                }
+                const selected = pool[idx];
+                members[selected.ownerIndex].equipment[slotKey] = null;
+                if (!targetMember.equipment) {
+                    targetMember.equipment = { weapon: null, armor: null, helmet: null, gloves: null, boots: null };
+                }
+                targetMember.equipment[slotKey] = selected.item;
+                this.renderEquipmentMenu();
+                this.renderFieldParty();
+            },
+
+            openEquipmentTargetMenu() {
+                const modal = document.getElementById('equipment-target-menu');
+                const list = document.getElementById('equipment-target-list');
+                list.innerHTML = '';
+                const members = [this.player, ...this.companions.filter(c => c.alive !== false)];
+                members.forEach((m, idx) => {
+                    const btn = document.createElement('button');
+                    btn.className = 'target-button';
+                    btn.textContent = `${m.name} (${m.job || '仲間'})`;
+                    btn.onclick = () => this.applyShopPurchaseToTarget(idx);
+                    list.appendChild(btn);
+                });
+                modal.style.display = 'block';
+            },
+
+            closeEquipmentTargetMenu() {
+                const modal = document.getElementById('equipment-target-menu');
+                if (modal) modal.style.display = 'none';
+                this.pendingShopItem = null;
+            },
+
+            applyShopPurchaseToTarget(idx) {
+                const members = [this.player, ...this.companions.filter(c => c.alive !== false)];
+                const target = members[idx];
+                const item = this.pendingShopItem;
+                if (!target || !item) return;
+                if (this.player.gold < item.price) {
+                    alert('おかねがたりない');
+                    this.closeEquipmentTargetMenu();
+                    return;
+                }
+                this.player.gold -= item.price;
+                if (!target.equipment) {
+                    target.equipment = { weapon: null, armor: null, helmet: null, gloves: null, boots: null };
+                }
+                target.equipment[item.type] = item;
+                this.updateStatus();
+                this.renderFieldParty();
+                alert(`${target.name}う<{item.name}を裁E��した�E�`);
+                this.pendingShopItem = null;
+                this.closeEquipmentTargetMenu();
+            },
+
+            openFieldItemMenu() {
+                const list = document.getElementById('field-item-list');
+                list.innerHTML = '';
+                for (let item in this.player.inventory) {
+                    if (this.player.inventory[item] > 0) {
+                        const div = document.createElement('div');
+                        div.className = 'shop-item';
+                        div.innerHTML = `${item} ÁE${this.player.inventory[item]}`;
+                        div.onclick = () => this.useFieldItem(item);
+                        list.appendChild(div);
+                    }
+                }
+                document.getElementById('field-item-menu').style.display = 'block';
+            },
+
+            closeFieldItemMenu() {
+                document.getElementById('field-item-menu').style.display = 'none';
+                this.closeFieldItemTargetMenu();
+            },
+
+            useFieldItem(item) {
+                if (this.player.inventory[item] <= 0) return;
+                
+                this.showFieldItemTargetMenu(item);
+            },
+
+            getTotalEquipmentStat(stat) {
+                let total = 0;
+                for (let slot in this.player.equipment) {
+                    const item = this.player.equipment[slot];
+                    if (item && item[stat]) {
+                        total += item[stat];
+                    }
+                }
+                return total;
+            },
+
+            getMemberEquipmentStat(member, stat) {
+                if (!member || !member.equipment) return 0;
+                let total = 0;
+                for (let slot in member.equipment) {
+                    const item = member.equipment[slot];
+                    if (item && item[stat]) {
+                        total += item[stat];
+                    }
+                }
+                return total;
+            },
+
+            hasRangedWeapon(member) {
+                if (!member || !member.equipment) return false;
+                const w = member.equipment.weapon;
+                return !!(w && w.ranged);
+            },
+
+            showFieldItemTargetMenu(item) {
+                const modal = document.getElementById('field-item-target-menu');
+                const list = document.getElementById('field-item-target-list');
+                list.innerHTML = '';
+                const members = [this.player, ...this.companions.filter(c => c.alive !== false)];
+                members.forEach((m, idx) => {
+                    const btn = document.createElement('button');
+                    btn.className = 'target-button';
+                    const poison = m.poisoned ? ' 💜毒' : '';
+                    btn.textContent = `${m.name} HP:${m.hp}/${m.maxHp} MP:${m.mp}/${m.maxMp}${poison}`;
+                    btn.onclick = () => this.applyFieldItemEffect(item, m);
+                    list.appendChild(btn);
+                });
+                modal.style.display = 'block';
+            },
+
+            closeFieldItemTargetMenu() {
+                const modal = document.getElementById('field-item-target-menu');
+                if (modal) modal.style.display = 'none';
+            },
+
+            applyFieldItemEffect(item, target) {
+                if (!target || this.player.inventory[item] <= 0) return;
+                if (target.alive === false) return;
+                if (item === 'やくそう') {
+                    this.player.inventory[item]--;
+                    target.hp = Math.min(target.maxHp, target.hp + 30);
+                    this.showMessage(`${target.name}に${item}を使った！HPが30回復した！`);
+                } else if (item === 'どくけしそう') {
+                    this.player.inventory[item]--;
+                    target.poisoned = false;
+                    this.showMessage(`${target.name}に${item}を使った！どく状態が治った！`);
+                } else if (item === 'ちからのたね') {
+                    this.player.inventory[item]--;
+                    const increase = Math.floor(Math.random() * 4) + 1;
+                    target.attack += increase;
+                    this.showMessage(`${target.name}に${item}を使った！攻撃が${increase}上がった！`);
+                }
+                this.updateStatus();
+                this.renderFieldParty();
+                this.closeFieldItemTargetMenu();
+                this.openFieldItemMenu();
+            },
+
+            lockCommands() {
+                this.commandsLocked = true;
+                document.querySelectorAll('#battle-commands button').forEach(b => b.disabled = true);
+            },
+
+            unlockCommands() {
+                if (!this.inBattle) return;
+                this.commandsLocked = false;
+                document.querySelectorAll('#battle-commands button').forEach(b => b.disabled = false);
+            },
+
+            showMessage(msg) {
+                const messageBox = document.getElementById('message-box');
+                if (messageBox.innerHTML === '') {
+                    messageBox.innerHTML = msg;
+                } else {
+                    messageBox.innerHTML += '<br>' + msg;
+                }
+                messageBox.scrollTop = messageBox.scrollHeight;
+            },
+
+            getHpColor(member) {
+                if (!member || member.maxHp === 0) return '#fff';
+                const ratio = member.hp / member.maxHp;
+                if (ratio <= 0.2) return '#f00';
+                if (ratio <= 0.5) return '#f90';
+                return '#fff';
+            },
+
+            updateStatus() {
+                document.getElementById('level').textContent = this.player.level;
+                document.getElementById('hp').textContent = this.player.hp;
+                document.getElementById('maxHp').textContent = this.player.maxHp;
+                document.getElementById('mp').textContent = this.player.mp;
+                document.getElementById('maxMp').textContent = this.player.maxMp;
+                document.getElementById('exp').textContent = this.player.exp;
+                document.getElementById('gold').textContent = this.player.gold;
+                const jobSpan = document.getElementById('job');
+                if (jobSpan) jobSpan.textContent = this.player.job;
+                // HPカラー
+                const hpSpan = document.getElementById('hp');
+                if (hpSpan) {
+                    hpSpan.style.color = this.getHpColor(this.player);
+                }
+                
+                // 毒状態�E表示
+                const statusDiv = document.getElementById('status');
+                let poisonDisplay = statusDiv.querySelector('.poison-status');
+                if (this.player.poisoned) {
+                    if (!poisonDisplay) {
+                        poisonDisplay = document.createElement('div');
+                        poisonDisplay.className = 'poison-status';
+                        poisonDisplay.style.color = '#f0f';
+                        poisonDisplay.style.fontSize = '16px';
+                        statusDiv.appendChild(poisonDisplay);
+                    }
+                    poisonDisplay.textContent = '💜 毒状態';
+                } else if (poisonDisplay) {
+                    poisonDisplay.remove();
+                }
+                
+                this.renderFieldParty();
+            }
+        };
+
+        window.onload = () => game.init();
+    </script>
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
